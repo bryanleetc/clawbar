@@ -7,6 +7,25 @@
 	padding: 0;
 }
 
+/* Context bar */
+.clawbar-context-bar {
+	padding: 4px 12px 8px;
+	font-size: 0.75rem;
+	color: var(--text-faint);
+	min-height: 16px;
+}
+
+.clawbar-context-bar:empty {
+	display: none;
+}
+
+.clawbar-context-file {
+	background-color: var(--background-secondary);
+	padding: 2px 8px;
+	border-radius: 4px;
+	color: var(--text-muted);
+}
+
 /* Messages area */
 .clawbar-messages {
 	flex: 1;

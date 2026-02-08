@@ -1,4 +1,4 @@
-import { ItemView, MarkdownRenderer, Notice, WorkspaceLeaf } from "obsidian";
+import { ItemView, MarkdownRenderer, Notice, WorkspaceLeaf, TFile } from "obsidian";
 import { ClaudeProcess } from "./claude/ProcessManager";
 import { StreamMessage, ContentBlock } from "./claude/types";
 import type ClawbarPlugin from "./main";
@@ -16,6 +16,8 @@ export class ChatView extends ItemView {
 	private inputArea: HTMLTextAreaElement;
 	private thinkingEl: HTMLElement | null = null;
 	private claudeProcess: ClaudeProcess;
+	private activeFile: TFile | null = null;
+	private contextBar: HTMLElement;
 	plugin: ClawbarPlugin;
 
 	constructor(leaf: WorkspaceLeaf, plugin: ClawbarPlugin) {
@@ -57,6 +59,10 @@ export class ChatView extends ItemView {
 			text: "Send",
 		});
 
+		// Context bar showing active file (below input)
+		this.contextBar = container.createDiv({ cls: "clawbar-context-bar" });
+		this.updateContextBar();
+
 		// Event handlers
 		this.inputArea.addEventListener("keydown", (e) => {
 			if (e.key === "Enter" && !e.shiftKey) {
@@ -75,8 +81,31 @@ export class ChatView extends ItemView {
 			this.inputArea.style.height = Math.min(this.inputArea.scrollHeight, 150) + "px";
 		});
 
+		// Register active file listener
+		this.registerEvent(
+			this.app.workspace.on("active-leaf-change", () => {
+				this.activeFile = this.app.workspace.getActiveFile();
+				this.updateContextBar();
+			})
+		);
+
+		// Initialize active file
+		this.activeFile = this.app.workspace.getActiveFile();
+		this.updateContextBar();
+
 		// Start Claude process
 		this.startClaudeProcess();
+	}
+
+	private updateContextBar() {
+		this.contextBar.empty();
+
+		if (this.activeFile) {
+			this.contextBar.createSpan({
+				cls: "clawbar-context-file",
+				text: this.activeFile.name
+			});
+		}
 	}
 
 	private startClaudeProcess() {
@@ -127,7 +156,7 @@ export class ChatView extends ItemView {
 		this.claudeProcess.stop();
 	}
 
-	private handleSubmit() {
+	private async handleSubmit() {
 		const text = this.inputArea.value.trim();
 		if (!text) return;
 
@@ -135,8 +164,20 @@ export class ChatView extends ItemView {
 		this.inputArea.value = "";
 		this.inputArea.style.height = "auto";
 
+		// Build message with active file context
+		let messageToSend = text;
+		if (this.activeFile) {
+			const fileContent = await this.app.vault.read(this.activeFile);
+			messageToSend = `[Active file: ${this.activeFile.path}]\n\n${text}`;
+
+			// Include file content if it's not too large (< 10KB)
+			if (fileContent.length < 10000) {
+				messageToSend = `[Active file: ${this.activeFile.path}]\n\`\`\`\n${fileContent}\n\`\`\`\n\n${text}`;
+			}
+		}
+
 		this.showThinking();
-		this.claudeProcess.sendMessage(text);
+		this.claudeProcess.sendMessage(messageToSend);
 	}
 
 	private showThinking() {
