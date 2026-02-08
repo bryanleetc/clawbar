@@ -105,8 +105,11 @@ export class ChatView extends ItemView {
 	}
 
 	private handleStreamMessage(msg: StreamMessage) {
+		console.log("[ChatView] Received message:", JSON.stringify(msg, null, 2));
+
 		if (msg.type === "assistant") {
 			const content = this.extractTextContent(msg.message.content);
+			console.log("[ChatView] Extracted content:", content);
 			if (content) {
 				this.addMessage("assistant", content);
 			}
