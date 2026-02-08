@@ -131,18 +131,17 @@ export class StreamParser {
 		return {
 			type: "result",
 			result: obj.result,
-			cost_usd: typeof obj.cost_usd === "number" ? obj.cost_usd : 0,
+			cost_usd: typeof obj.total_cost_usd === "number" ? obj.total_cost_usd : 0,
+			session_id: typeof obj.session_id === "string" ? obj.session_id : undefined,
 		};
 	}
 
 	private validateSystemMessage(obj: Record<string, unknown>): SystemMessage | null {
-		if (typeof obj.message !== "string") {
-			return null;
-		}
-
 		return {
 			type: "system",
-			message: obj.message,
+			subtype: obj.subtype === "init" ? "init" : undefined,
+			message: typeof obj.message === "string" ? obj.message : undefined,
+			session_id: typeof obj.session_id === "string" ? obj.session_id : undefined,
 		};
 	}
 

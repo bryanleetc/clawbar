@@ -24,11 +24,14 @@ export interface ResultMessage {
 	type: "result";
 	result: string;
 	cost_usd: number;
+	session_id?: string;
 }
 
 export interface SystemMessage {
 	type: "system";
-	message: string;
+	subtype?: "init";
+	message?: string;
+	session_id?: string;
 }
 
 export type StreamMessage = AssistantMessage | UserMessage | ResultMessage | SystemMessage;

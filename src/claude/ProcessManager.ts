@@ -32,12 +32,14 @@ export class ClaudeProcess {
 
 		// Set up message handler on parser
 		this.parser.setMessageHandler((msg) => {
-			// Extract conversation/session ID from init message for conversation continuity
-			if (msg.type === "system") {
-				const systemMsg = msg as unknown as { session_id?: string };
-				if (systemMsg.session_id) {
-					this.conversationId = systemMsg.session_id;
-				}
+			// Extract session_id for conversation continuity
+			// It's available in system init messages and result messages
+			if (msg.type === "system" && msg.session_id) {
+				this.conversationId = msg.session_id;
+				console.log("[ClaudeProcess] Captured session_id from system:", this.conversationId);
+			} else if (msg.type === "result" && msg.session_id) {
+				this.conversationId = msg.session_id;
+				console.log("[ClaudeProcess] Captured session_id from result:", this.conversationId);
 			}
 			this.messageCallback?.(msg);
 		});
@@ -71,9 +73,9 @@ export class ClaudeProcess {
 		// --verbose is required when using -p with --output-format stream-json
 		const args = ["--output-format", "stream-json", "--verbose", "-p", text];
 
-		// If we have a conversation ID, continue that conversation
+		// If we have a conversation ID, resume that conversation
 		if (this.conversationId) {
-			args.push("--continue", this.conversationId);
+			args.push("--resume", this.conversationId);
 		}
 
 		console.log("[ClaudeProcess] Spawning with args:", args);
