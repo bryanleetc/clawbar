@@ -1,0 +1,21 @@
+# npm
+node_modules
+
+# Build output
+main.js
+*.map
+
+# Obsidian
+data.json
+
+# IDE
+.vscode
+*.iml
+.idea
+
+# OS
+.DS_Store
+
+# Claude
+CLAUDE.md
+.claude/

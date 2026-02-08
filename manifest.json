@@ -1,0 +1,9 @@
+{
+	"id": "obsidian-clawbar",
+	"name": "Clawbar",
+	"version": "1.0.0",
+	"minAppVersion": "0.15.0",
+	"description": "Native UI for Claude Code in Obsidian",
+	"author": "",
+	"isDesktopOnly": true
+}
