@@ -87,6 +87,10 @@ export class ChatView extends ItemView {
 		}
 
 		const claudePath = this.plugin.settings.claudePath;
+		if (!claudePath) {
+			new Notice("Claude path not configured. Please set it in plugin settings.");
+			return;
+		}
 
 		this.claudeProcess.onMessage((msg: StreamMessage) => {
 			this.handleStreamMessage(msg);

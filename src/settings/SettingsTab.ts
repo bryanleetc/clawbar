@@ -6,7 +6,7 @@ export interface ClawbarSettings {
 }
 
 export const DEFAULT_SETTINGS: ClawbarSettings = {
-	claudePath: "claude",
+	claudePath: "",
 };
 
 export class ClawbarSettingTab extends PluginSettingTab {
@@ -24,10 +24,10 @@ export class ClawbarSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Claude Code path")
-			.setDesc("Path to the Claude Code CLI executable")
+			.setDesc("Full path to the Claude Code CLI (run 'which claude' in terminal to find it)")
 			.addText((text) =>
 				text
-					.setPlaceholder("claude")
+					.setPlaceholder("/usr/local/bin/claude")
 					.setValue(this.plugin.settings.claudePath)
 					.onChange(async (value) => {
 						this.plugin.settings.claudePath = value;

@@ -1,4 +1,5 @@
 import { spawn, ChildProcess } from "child_process";
+import * as path from "path";
 import { StreamMessage } from "./types";
 
 export type MessageCallback = (message: StreamMessage) => void;
@@ -15,10 +16,20 @@ export class ClaudeProcess {
 			this.stop();
 		}
 
+		if (!claudePath) {
+			throw new Error("Claude path not configured. Please set it in plugin settings.");
+		}
+
+		// Add the directory containing claude to PATH (needed for nvm-installed node)
+		const claudeDir = path.dirname(claudePath);
+		const env = {
+			...process.env,
+			PATH: `${claudeDir}:${process.env.PATH || ""}`,
+		};
+
 		this.process = spawn(claudePath, ["--output-format", "stream-json", "--verbose"], {
 			cwd,
-			env: process.env,
-			shell: true,
+			env,
 		});
 
 		this.process.stdout?.on("data", (chunk: Buffer) => {
