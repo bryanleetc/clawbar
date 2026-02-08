@@ -1,4 +1,7 @@
-import { ItemView, MarkdownRenderer, WorkspaceLeaf } from "obsidian";
+import { ItemView, MarkdownRenderer, Notice, WorkspaceLeaf } from "obsidian";
+import { ClaudeProcess } from "./claude/ProcessManager";
+import { StreamMessage, ContentBlock } from "./claude/types";
+import type ClawbarPlugin from "./main";
 
 export const VIEW_TYPE_CHAT = "clawbar-chat-view";
 
@@ -11,9 +14,13 @@ export class ChatView extends ItemView {
 	private messages: Message[] = [];
 	private messagesContainer: HTMLElement;
 	private inputArea: HTMLTextAreaElement;
+	private claudeProcess: ClaudeProcess;
+	plugin: ClawbarPlugin;
 
-	constructor(leaf: WorkspaceLeaf) {
+	constructor(leaf: WorkspaceLeaf, plugin: ClawbarPlugin) {
 		super(leaf);
+		this.plugin = plugin;
+		this.claudeProcess = new ClaudeProcess();
 	}
 
 	getViewType(): string {
@@ -66,10 +73,55 @@ export class ChatView extends ItemView {
 			this.inputArea.style.height = "auto";
 			this.inputArea.style.height = Math.min(this.inputArea.scrollHeight, 150) + "px";
 		});
+
+		// Start Claude process
+		this.startClaudeProcess();
+	}
+
+	private startClaudeProcess() {
+		const vaultPath = (this.app.vault.adapter as { basePath?: string }).basePath;
+		if (!vaultPath) {
+			console.error("[ChatView] Could not get vault base path");
+			new Notice("Could not get vault base path");
+			return;
+		}
+
+		const claudePath = this.plugin.settings.claudePath;
+
+		this.claudeProcess.onMessage((msg: StreamMessage) => {
+			this.handleStreamMessage(msg);
+		});
+
+		this.claudeProcess.onError((error: string) => {
+			console.error("[ChatView] Claude error:", error);
+			new Notice(`Claude error: ${error}`);
+		});
+
+		this.claudeProcess.start(claudePath, vaultPath);
+	}
+
+	private handleStreamMessage(msg: StreamMessage) {
+		if (msg.type === "assistant") {
+			const content = this.extractTextContent(msg.message.content);
+			if (content) {
+				this.addMessage("assistant", content);
+			}
+		} else if (msg.type === "system") {
+			console.log("[ChatView] System message:", msg.message);
+		} else if (msg.type === "result") {
+			console.log("[ChatView] Result:", msg.result, "Cost:", msg.cost_usd);
+		}
+	}
+
+	private extractTextContent(blocks: ContentBlock[]): string {
+		return blocks
+			.filter((b) => b.type === "text" && b.text)
+			.map((b) => b.text)
+			.join("\n");
 	}
 
 	async onClose() {
-		// Cleanup when view is closed
+		this.claudeProcess.stop();
 	}
 
 	private handleSubmit() {
@@ -80,7 +132,7 @@ export class ChatView extends ItemView {
 		this.inputArea.value = "";
 		this.inputArea.style.height = "auto";
 
-		// TODO: Phase 1.3 will send to Claude process
+		this.claudeProcess.sendMessage(text);
 	}
 
 	addMessage(role: "user" | "assistant", content: string) {

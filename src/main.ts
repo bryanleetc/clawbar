@@ -9,7 +9,7 @@ export default class ClawbarPlugin extends Plugin {
 		await this.loadSettings();
 
 		// Register the chat view
-		this.registerView(VIEW_TYPE_CHAT, (leaf) => new ChatView(leaf));
+		this.registerView(VIEW_TYPE_CHAT, (leaf) => new ChatView(leaf, this));
 
 		// Add ribbon icon to open chat
 		this.addRibbonIcon("message-square", "Open Clawbar", () => {
