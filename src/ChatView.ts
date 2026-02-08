@@ -59,7 +59,7 @@ export class ChatView extends ItemView {
 
 		// Event handlers
 		this.inputArea.addEventListener("keydown", (e) => {
-			if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+			if (e.key === "Enter" && !e.shiftKey) {
 				e.preventDefault();
 				this.handleSubmit();
 			}
