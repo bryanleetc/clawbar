@@ -81,7 +81,6 @@ export class ChatView extends ItemView {
 	private startClaudeProcess() {
 		const vaultPath = (this.app.vault.adapter as { basePath?: string }).basePath;
 		if (!vaultPath) {
-			console.error("[ChatView] Could not get vault base path");
 			new Notice("Could not get vault base path");
 			return;
 		}
@@ -97,7 +96,6 @@ export class ChatView extends ItemView {
 		});
 
 		this.claudeProcess.onError((error: string) => {
-			console.error("[ChatView] Claude error:", error);
 			new Notice(`Claude error: ${error}`);
 		});
 
@@ -105,18 +103,11 @@ export class ChatView extends ItemView {
 	}
 
 	private handleStreamMessage(msg: StreamMessage) {
-		console.log("[ChatView] Received message:", JSON.stringify(msg, null, 2));
-
 		if (msg.type === "assistant") {
 			const content = this.extractTextContent(msg.message.content);
-			console.log("[ChatView] Extracted content:", content);
 			if (content) {
 				this.addMessage("assistant", content);
 			}
-		} else if (msg.type === "system") {
-			console.log("[ChatView] System message:", msg.message);
-		} else if (msg.type === "result") {
-			console.log("[ChatView] Result:", msg.result, "Cost:", msg.cost_usd);
 		}
 	}
 

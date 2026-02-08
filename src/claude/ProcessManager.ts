@@ -17,9 +17,6 @@ export class ClaudeProcess {
 
 	constructor() {
 		this.parser = new StreamParser();
-		this.parser.setErrorHandler((error, rawLine) => {
-			console.error("[ClaudeProcess] Parse error:", error.message, "Line:", rawLine);
-		});
 	}
 
 	start(claudePath: string, cwd: string): void {
@@ -33,23 +30,15 @@ export class ClaudeProcess {
 		// Set up message handler on parser
 		this.parser.setMessageHandler((msg) => {
 			// Extract session_id for conversation continuity
-			// It's available in system init messages and result messages
-			if (msg.type === "system" && msg.session_id) {
+			if ((msg.type === "system" || msg.type === "result") && msg.session_id) {
 				this.conversationId = msg.session_id;
-				console.log("[ClaudeProcess] Captured session_id from system:", this.conversationId);
-			} else if (msg.type === "result" && msg.session_id) {
-				this.conversationId = msg.session_id;
-				console.log("[ClaudeProcess] Captured session_id from result:", this.conversationId);
 			}
 			this.messageCallback?.(msg);
 		});
-
-		console.log("[ClaudeProcess] Initialized with path:", claudePath, "cwd:", cwd);
 	}
 
 	sendMessage(text: string): void {
 		if (!this.claudePath) {
-			console.error("[ClaudeProcess] Not initialized");
 			return;
 		}
 
@@ -78,42 +67,24 @@ export class ClaudeProcess {
 			args.push("--resume", this.conversationId);
 		}
 
-		console.log("[ClaudeProcess] Spawning with args:", args);
-		console.log("[ClaudeProcess] CWD:", this.cwd);
-
 		this.process = spawn(this.claudePath, args, {
 			cwd: this.cwd,
 			env,
 			stdio: ["pipe", "pipe", "pipe"],
 		});
 
-		console.log("[ClaudeProcess] Process spawned, pid:", this.process.pid);
-
 		// Close stdin immediately since we're using -p with the message as an argument
 		this.process.stdin?.end();
 
 		this.process.stdout?.on("data", (chunk: Buffer) => {
-			const data = chunk.toString();
-			console.log("[ClaudeProcess] Raw stdout:", data.substring(0, 500));
-			this.parser.feed(data);
-		});
-
-		this.process.stderr?.on("data", (chunk: Buffer) => {
-			const data = chunk.toString();
-			console.log("[ClaudeProcess] stderr:", data);
-		});
-
-		this.process.on("spawn", () => {
-			console.log("[ClaudeProcess] Process spawn event fired");
+			this.parser.feed(chunk.toString());
 		});
 
 		this.process.on("error", (err) => {
-			console.error("[ClaudeProcess] Process error:", err);
 			this.errorCallback?.(err.message);
 		});
 
-		this.process.on("close", (code) => {
-			console.log("[ClaudeProcess] Process exited with code:", code);
+		this.process.on("close", () => {
 			this.process = null;
 		});
 	}

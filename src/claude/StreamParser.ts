@@ -56,12 +56,9 @@ export class StreamParser {
 	private parseLine(line: string): void {
 		try {
 			const parsed = JSON.parse(line);
-			console.log("[StreamParser] Parsed JSON:", parsed);
 			const message = this.validateAndCast(parsed);
 			if (message) {
 				this.onMessage?.(message);
-			} else {
-				console.log("[StreamParser] Message validation returned null");
 			}
 		} catch (e) {
 			const error = e instanceof Error ? e : new Error(String(e));
@@ -89,8 +86,6 @@ export class StreamParser {
 			case "system":
 				return this.validateSystemMessage(record);
 			default:
-				// Unknown message type - log but don't error
-				console.log("[StreamParser] Unknown message type:", record.type, record);
 				return null;
 		}
 	}
