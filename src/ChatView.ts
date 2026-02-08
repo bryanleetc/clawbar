@@ -14,6 +14,7 @@ export class ChatView extends ItemView {
 	private messages: Message[] = [];
 	private messagesContainer: HTMLElement;
 	private inputArea: HTMLTextAreaElement;
+	private thinkingEl: HTMLElement | null = null;
 	private claudeProcess: ClaudeProcess;
 	plugin: ClawbarPlugin;
 
@@ -96,6 +97,7 @@ export class ChatView extends ItemView {
 		});
 
 		this.claudeProcess.onError((error: string) => {
+			this.hideThinking();
 			new Notice(`Claude error: ${error}`);
 		});
 
@@ -106,8 +108,11 @@ export class ChatView extends ItemView {
 		if (msg.type === "assistant") {
 			const content = this.extractTextContent(msg.message.content);
 			if (content) {
+				this.hideThinking();
 				this.addMessage("assistant", content);
 			}
+		} else if (msg.type === "result") {
+			this.hideThinking();
 		}
 	}
 
@@ -130,7 +135,23 @@ export class ChatView extends ItemView {
 		this.inputArea.value = "";
 		this.inputArea.style.height = "auto";
 
+		this.showThinking();
 		this.claudeProcess.sendMessage(text);
+	}
+
+	private showThinking() {
+		this.hideThinking();
+		this.thinkingEl = this.messagesContainer.createDiv({ cls: "clawbar-thinking" });
+		this.thinkingEl.createSpan({ text: "Thinking", cls: "clawbar-thinking-text" });
+		this.thinkingEl.createSpan({ cls: "clawbar-thinking-dots" });
+		this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
+	}
+
+	private hideThinking() {
+		if (this.thinkingEl) {
+			this.thinkingEl.remove();
+			this.thinkingEl = null;
+		}
 	}
 
 	addMessage(role: "user" | "assistant", content: string) {
