@@ -3,10 +3,14 @@ import ClawbarPlugin from "../main";
 
 export interface ClawbarSettings {
 	claudePath: string;
+	resumeLastConversation: boolean;
+	lastSessionId: string | null;
 }
 
 export const DEFAULT_SETTINGS: ClawbarSettings = {
 	claudePath: "",
+	resumeLastConversation: false,
+	lastSessionId: null,
 };
 
 export class ClawbarSettingTab extends PluginSettingTab {
