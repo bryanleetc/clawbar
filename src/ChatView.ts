@@ -2,7 +2,7 @@ import { ItemView, MarkdownRenderer, Notice, WorkspaceLeaf, TFile } from "obsidi
 import { AgentManager } from "./claude/AgentManager";
 import type { SDKMessage, PermissionResult, ContentBlock, SlashCommand } from "./claude/types";
 import type ClawbarPlugin from "./main";
-import type { SlashCommandDef } from "./constants";
+import { BUILTIN_COMMANDS, type SlashCommandDef } from "./constants";
 
 export const VIEW_TYPE_CHAT = "clawbar-chat-view";
 
@@ -164,11 +164,15 @@ export class ChatView extends ItemView {
 
 	private loadSkills(skills: SlashCommand[]) {
 		// Convert SDK skills to our SlashCommandDef format
-		this.allCommands = skills.map(skill => ({
+		const sdkSkills = skills.map(skill => ({
 			name: skill.name,
 			description: skill.description,
 			argumentHint: skill.argumentHint,
 		}));
+
+		// Merge built-in commands with SDK skills
+		// Built-in commands come first for better discoverability
+		this.allCommands = [...BUILTIN_COMMANDS, ...sdkSkills];
 	}
 
 	private startAgent() {
@@ -568,28 +572,59 @@ export class ChatView extends ItemView {
 		// Get the partial command after the slash
 		const partialCommand = textBeforeCursor.substring(lastSlashIndex + 1);
 
-		// Filter commands based on partial input
-		const filteredCommands = this.allCommands.filter(cmd =>
+		// Filter built-in commands and skills separately
+		const filteredBuiltins = BUILTIN_COMMANDS.filter(cmd =>
 			cmd.name.startsWith(partialCommand.toLowerCase())
 		);
 
-		if (filteredCommands.length === 0) {
+		const sdkSkills = this.allCommands.filter(cmd =>
+			!BUILTIN_COMMANDS.some(builtin => builtin.name === cmd.name)
+		);
+		const filteredSkills = sdkSkills.filter(cmd =>
+			cmd.name.startsWith(partialCommand.toLowerCase())
+		);
+
+		if (filteredBuiltins.length === 0 && filteredSkills.length === 0) {
 			this.hideAutocomplete();
 			return;
 		}
 
-		this.showAutocomplete(filteredCommands);
+		this.showAutocomplete(filteredBuiltins, filteredSkills);
 	}
 
-	private showAutocomplete(commands: SlashCommandDef[]) {
+	private showAutocomplete(builtinCommands: SlashCommandDef[], skills: SlashCommandDef[]) {
 		if (!this.autocompleteEl) return;
 
 		this.autocompleteEl.empty();
 		this.selectedCommandIndex = 0;
 
-		commands.forEach((cmd, index) => {
-			this.renderAutocompleteItem(cmd, index === 0);
-		});
+		let itemIndex = 0;
+
+		// Render built-in commands section
+		if (builtinCommands.length > 0) {
+			this.autocompleteEl.createDiv({
+				cls: "clawbar-autocomplete-section",
+				text: "Commands"
+			});
+
+			builtinCommands.forEach((cmd) => {
+				this.renderAutocompleteItem(cmd, itemIndex === 0);
+				itemIndex++;
+			});
+		}
+
+		// Render skills section
+		if (skills.length > 0) {
+			this.autocompleteEl.createDiv({
+				cls: "clawbar-autocomplete-section",
+				text: "Skills"
+			});
+
+			skills.forEach((cmd) => {
+				this.renderAutocompleteItem(cmd, itemIndex === 0 && builtinCommands.length === 0);
+				itemIndex++;
+			});
+		}
 
 		this.autocompleteEl.style.display = "block";
 	}
