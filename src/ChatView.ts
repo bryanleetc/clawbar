@@ -2,6 +2,7 @@ import { ItemView, MarkdownRenderer, Notice, WorkspaceLeaf, TFile } from "obsidi
 import { AgentManager } from "./claude/AgentManager";
 import type { SDKMessage, PermissionResult, ContentBlock } from "./claude/types";
 import type ClawbarPlugin from "./main";
+import { SLASH_COMMANDS } from "./constants";
 
 export const VIEW_TYPE_CHAT = "clawbar-chat-view";
 
@@ -12,13 +13,6 @@ interface Message {
 	toolId?: string;
 	toolResult?: string;
 }
-
-// Available Claude Code slash commands
-const SLASH_COMMANDS = [
-	{ name: "clear", description: "Clear conversation history" },
-	{ name: "reset", description: "Reset the conversation" },
-	{ name: "tasks", description: "Show active tasks" },
-];
 
 export class ChatView extends ItemView {
 	private messages: Message[] = [];
