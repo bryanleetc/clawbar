@@ -13,6 +13,13 @@ interface Message {
 	toolResult?: string;
 }
 
+// Available Claude Code slash commands
+const SLASH_COMMANDS = [
+	{ name: "clear", description: "Clear conversation history" },
+	{ name: "reset", description: "Reset the conversation" },
+	{ name: "tasks", description: "Show active tasks" },
+];
+
 export class ChatView extends ItemView {
 	private messages: Message[] = [];
 	private messagesContainer: HTMLElement;
@@ -21,6 +28,8 @@ export class ChatView extends ItemView {
 	private agent: AgentManager;
 	private activeFile: TFile | null = null;
 	private contextBar: HTMLElement;
+	private autocompleteEl: HTMLElement | null = null;
+	private selectedCommandIndex = -1;
 	plugin: ClawbarPlugin;
 
 	constructor(leaf: WorkspaceLeaf, plugin: ClawbarPlugin) {
@@ -62,15 +71,48 @@ export class ChatView extends ItemView {
 			text: "Send",
 		});
 
+		// Autocomplete dropdown (initially hidden)
+		this.autocompleteEl = inputWrapper.createDiv({ cls: "clawbar-autocomplete" });
+		this.autocompleteEl.style.display = "none";
+
 		// Context bar showing active file (below input)
 		this.contextBar = container.createDiv({ cls: "clawbar-context-bar" });
 		this.updateContextBar();
 
 		// Event handlers
 		this.inputArea.addEventListener("keydown", (e) => {
+			// Handle autocomplete navigation
+			if (this.autocompleteEl && this.autocompleteEl.style.display !== "none") {
+				if (e.key === "ArrowDown") {
+					e.preventDefault();
+					this.navigateAutocomplete(1);
+					return;
+				}
+				if (e.key === "ArrowUp") {
+					e.preventDefault();
+					this.navigateAutocomplete(-1);
+					return;
+				}
+				if (e.key === "Tab") {
+					e.preventDefault();
+					this.selectCommand();
+					return;
+				}
+				if (e.key === "Escape") {
+					e.preventDefault();
+					this.hideAutocomplete();
+					return;
+				}
+			}
+
 			if (e.key === "Enter" && !e.shiftKey) {
 				e.preventDefault();
-				this.handleSubmit();
+				// If autocomplete is open, select the highlighted command
+				if (this.autocompleteEl && this.autocompleteEl.style.display !== "none") {
+					this.selectCommand();
+				} else {
+					this.handleSubmit();
+				}
 			}
 		});
 
@@ -78,10 +120,11 @@ export class ChatView extends ItemView {
 			this.handleSubmit();
 		});
 
-		// Auto-resize textarea
+		// Auto-resize textarea and handle autocomplete
 		this.inputArea.addEventListener("input", () => {
 			this.inputArea.style.height = "auto";
 			this.inputArea.style.height = Math.min(this.inputArea.scrollHeight, 150) + "px";
+			this.handleAutocomplete();
 		});
 
 		// Register active file listener
@@ -472,5 +515,119 @@ export class ChatView extends ItemView {
 			await MarkdownRenderer.render(this.app, block.text, textEl, "", this);
 		}
 		// tool_use and tool_result are handled by renderToolMessage
+	}
+
+	// --- Slash Command Autocomplete ---
+
+	private handleAutocomplete() {
+		const text = this.inputArea.value;
+		const cursorPos = this.inputArea.selectionStart;
+
+		// Find the last '/' before cursor
+		const textBeforeCursor = text.substring(0, cursorPos);
+		const lastSlashIndex = textBeforeCursor.lastIndexOf('/');
+
+		// Check if we're at the start or after whitespace (valid slash command position)
+		if (lastSlashIndex === -1) {
+			this.hideAutocomplete();
+			return;
+		}
+
+		const beforeSlash = textBeforeCursor.substring(0, lastSlashIndex);
+		if (beforeSlash.trim() !== '' && !beforeSlash.endsWith('\n')) {
+			this.hideAutocomplete();
+			return;
+		}
+
+		// Get the partial command after the slash
+		const partialCommand = textBeforeCursor.substring(lastSlashIndex + 1);
+
+		// Filter commands based on partial input
+		const filteredCommands = SLASH_COMMANDS.filter(cmd =>
+			cmd.name.startsWith(partialCommand.toLowerCase())
+		);
+
+		if (filteredCommands.length === 0) {
+			this.hideAutocomplete();
+			return;
+		}
+
+		this.showAutocomplete(filteredCommands);
+	}
+
+	private showAutocomplete(commands: typeof SLASH_COMMANDS) {
+		if (!this.autocompleteEl) return;
+
+		this.autocompleteEl.empty();
+		this.selectedCommandIndex = 0;
+
+		commands.forEach((cmd, index) => {
+			const item = this.autocompleteEl!.createDiv({
+				cls: index === 0 ? "clawbar-autocomplete-item clawbar-autocomplete-selected" : "clawbar-autocomplete-item"
+			});
+
+			item.createDiv({ cls: "clawbar-autocomplete-name", text: `/${cmd.name}` });
+			item.createDiv({ cls: "clawbar-autocomplete-desc", text: cmd.description });
+
+			item.addEventListener("click", () => {
+				this.selectedCommandIndex = index;
+				this.selectCommand();
+			});
+		});
+
+		this.autocompleteEl.style.display = "block";
+	}
+
+	private hideAutocomplete() {
+		if (this.autocompleteEl) {
+			this.autocompleteEl.style.display = "none";
+			this.selectedCommandIndex = -1;
+		}
+	}
+
+	private navigateAutocomplete(direction: number) {
+		if (!this.autocompleteEl) return;
+
+		const items = this.autocompleteEl.querySelectorAll(".clawbar-autocomplete-item");
+		if (items.length === 0) return;
+
+		// Remove current selection
+		items[this.selectedCommandIndex]?.removeClass("clawbar-autocomplete-selected");
+
+		// Update index with wrapping
+		this.selectedCommandIndex = (this.selectedCommandIndex + direction + items.length) % items.length;
+
+		// Add new selection
+		items[this.selectedCommandIndex]?.addClass("clawbar-autocomplete-selected");
+
+		// Scroll into view
+		items[this.selectedCommandIndex]?.scrollIntoView({ block: "nearest" });
+	}
+
+	private selectCommand() {
+		if (!this.autocompleteEl || this.selectedCommandIndex === -1) return;
+
+		const items = this.autocompleteEl.querySelectorAll(".clawbar-autocomplete-item");
+		const selectedItem = items[this.selectedCommandIndex];
+		if (!selectedItem) return;
+
+		const commandName = selectedItem.querySelector(".clawbar-autocomplete-name")?.textContent;
+		if (!commandName) return;
+
+		// Replace the partial command with the selected one
+		const text = this.inputArea.value;
+		const cursorPos = this.inputArea.selectionStart;
+		const textBeforeCursor = text.substring(0, cursorPos);
+		const lastSlashIndex = textBeforeCursor.lastIndexOf('/');
+
+		const newText = text.substring(0, lastSlashIndex) + commandName + " " + text.substring(cursorPos);
+		this.inputArea.value = newText;
+
+		// Set cursor position after the command and space
+		const newCursorPos = lastSlashIndex + commandName.length + 1;
+		this.inputArea.setSelectionRange(newCursorPos, newCursorPos);
+
+		this.hideAutocomplete();
+		this.inputArea.focus();
 	}
 }

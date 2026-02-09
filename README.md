@@ -14,3 +14,5 @@ A plugin that aims to replicate a native Claude Code chat UI, similar to how it'
 - Syntax highlighting for code in tool outputs
 - Clickable file paths
 - Command history (up/down arrows)
+- Slash commands
+- Stop button to cancel ongoing commands
