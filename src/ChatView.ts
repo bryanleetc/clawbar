@@ -6,8 +6,11 @@ import type ClawbarPlugin from "./main";
 export const VIEW_TYPE_CHAT = "clawbar-chat-view";
 
 interface Message {
-	role: "user" | "assistant";
-	content: string;
+	role: "user" | "assistant" | "tool";
+	blocks: ContentBlock[];
+	toolName?: string;
+	toolId?: string;
+	toolResult?: string;
 }
 
 export class ChatView extends ItemView {
@@ -135,21 +138,51 @@ export class ChatView extends ItemView {
 
 	private handleStreamMessage(msg: StreamMessage) {
 		if (msg.type === "assistant") {
-			const content = this.extractTextContent(msg.message.content);
-			if (content) {
+			const blocks = msg.message.content;
+			if (blocks.length > 0) {
 				this.hideThinking();
-				this.addMessage("assistant", content);
+
+				// Separate text blocks from tool_use blocks
+				const textBlocks = blocks.filter(b => b.type === "text");
+				const toolUseBlocks = blocks.filter(b => b.type === "tool_use");
+
+				// Add text content as assistant message
+				if (textBlocks.length > 0) {
+					this.addMessage("assistant", textBlocks);
+				}
+
+				// Add each tool_use as its own "tool" message
+				for (const toolBlock of toolUseBlocks) {
+					this.messages.push({
+						role: "tool",
+						blocks: [toolBlock],
+						toolName: toolBlock.name,
+						toolId: toolBlock.id,
+					});
+				}
+
+				if (toolUseBlocks.length > 0) {
+					this.renderMessages();
+				}
+			}
+		} else if (msg.type === "user") {
+			// Match tool results to their tool_use messages
+			const toolResults = msg.message.content.filter(b => b.type === "tool_result");
+			for (const result of toolResults) {
+				// Find the matching tool message by ID
+				const toolMsg = this.messages.find(
+					m => m.role === "tool" && m.toolId === result.tool_use_id
+				);
+				if (toolMsg) {
+					toolMsg.toolResult = result.content;
+				}
+			}
+			if (toolResults.length > 0) {
+				this.renderMessages();
 			}
 		} else if (msg.type === "result") {
 			this.hideThinking();
 		}
-	}
-
-	private extractTextContent(blocks: ContentBlock[]): string {
-		return blocks
-			.filter((b) => b.type === "text" && b.text)
-			.map((b) => b.text)
-			.join("\n");
 	}
 
 	async onClose() {
@@ -160,7 +193,7 @@ export class ChatView extends ItemView {
 		const text = this.inputArea.value.trim();
 		if (!text) return;
 
-		this.addMessage("user", text);
+		this.addMessage("user", [{ type: "text", text }]);
 		this.inputArea.value = "";
 		this.inputArea.style.height = "auto";
 
@@ -195,8 +228,8 @@ export class ChatView extends ItemView {
 		}
 	}
 
-	addMessage(role: "user" | "assistant", content: string) {
-		this.messages.push({ role, content });
+	addMessage(role: "user" | "assistant", blocks: ContentBlock[]) {
+		this.messages.push({ role, blocks });
 		this.renderMessages();
 	}
 
@@ -204,17 +237,82 @@ export class ChatView extends ItemView {
 		this.messagesContainer.empty();
 
 		for (const msg of this.messages) {
-			const msgEl = this.messagesContainer.createDiv({
-				cls: `clawbar-message clawbar-message-${msg.role}`,
-			});
+			if (msg.role === "tool") {
+				// Render tool messages with their own style
+				this.renderToolMessage(msg);
+			} else {
+				const msgEl = this.messagesContainer.createDiv({
+					cls: `clawbar-message clawbar-message-${msg.role}`,
+				});
 
-			const roleLabel = msgEl.createDiv({ cls: "clawbar-message-role" });
-			roleLabel.setText(msg.role === "user" ? "You" : "Claude");
+				const roleLabel = msgEl.createDiv({ cls: "clawbar-message-role" });
+				roleLabel.setText(msg.role === "user" ? "You" : "Claude");
 
-			const contentEl = msgEl.createDiv({ cls: "clawbar-message-content" });
-			await MarkdownRenderer.render(this.app, msg.content, contentEl, "", this);
+				const contentEl = msgEl.createDiv({ cls: "clawbar-message-content" });
+
+				for (const block of msg.blocks) {
+					await this.renderContentBlock(block, contentEl);
+				}
+			}
 		}
 
 		this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
+	}
+
+	private renderToolMessage(msg: Message) {
+		const toolEl = this.messagesContainer.createDiv({ cls: "clawbar-message clawbar-message-tool" });
+
+		const header = toolEl.createDiv({ cls: "clawbar-tool-header" });
+		const toggle = header.createSpan({ cls: "clawbar-tool-toggle", text: "▶" });
+		header.createSpan({ cls: "clawbar-tool-name", text: msg.toolName || "Tool" });
+
+		// Show status indicator
+		if (msg.toolResult !== undefined) {
+			header.createSpan({ cls: "clawbar-tool-status clawbar-tool-complete", text: "✓" });
+		} else {
+			header.createSpan({ cls: "clawbar-tool-status clawbar-tool-pending", text: "⋯" });
+		}
+
+		const content = toolEl.createDiv({ cls: "clawbar-tool-content clawbar-collapsed" });
+
+		// Render tool input
+		const toolBlock = msg.blocks[0];
+		if (toolBlock?.input) {
+			content.createDiv({ cls: "clawbar-tool-section-label", text: "Input" });
+			const inputCode = content.createEl("pre", { cls: "clawbar-tool-code" });
+			inputCode.createEl("code", {
+				text: JSON.stringify(toolBlock.input, null, 2)
+			});
+		}
+
+		// Render tool result if available
+		if (msg.toolResult !== undefined) {
+			content.createDiv({ cls: "clawbar-tool-section-label", text: "Output" });
+			const resultCode = content.createEl("pre", { cls: "clawbar-tool-code" });
+			const displayContent = msg.toolResult.length > 2000
+				? msg.toolResult.slice(0, 2000) + "\n... (truncated)"
+				: msg.toolResult;
+			resultCode.createEl("code", { text: displayContent });
+		}
+
+		// Toggle collapse/expand
+		header.addEventListener("click", () => {
+			const isCollapsed = content.hasClass("clawbar-collapsed");
+			if (isCollapsed) {
+				content.removeClass("clawbar-collapsed");
+				toggle.setText("▼");
+			} else {
+				content.addClass("clawbar-collapsed");
+				toggle.setText("▶");
+			}
+		});
+	}
+
+	private async renderContentBlock(block: ContentBlock, container: HTMLElement) {
+		if (block.type === "text" && block.text) {
+			const textEl = container.createDiv({ cls: "clawbar-text-block" });
+			await MarkdownRenderer.render(this.app, block.text, textEl, "", this);
+		}
+		// tool_use and tool_result are handled by renderToolMessage
 	}
 }

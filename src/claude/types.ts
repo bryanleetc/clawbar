@@ -1,8 +1,12 @@
 export interface ContentBlock {
 	type: "text" | "tool_use" | "tool_result";
 	text?: string;
+	// tool_use fields
+	id?: string;
 	name?: string;
 	input?: Record<string, unknown>;
+	// tool_result fields
+	tool_use_id?: string;
 	content?: string;
 }
 

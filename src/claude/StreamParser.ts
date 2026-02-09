@@ -162,6 +162,7 @@ export class StreamParser {
 		if (type === "tool_use") {
 			return {
 				type: "tool_use",
+				id: typeof block.id === "string" ? block.id : undefined,
 				name: typeof block.name === "string" ? block.name : "",
 				input: typeof block.input === "object" ? (block.input as Record<string, unknown>) : {},
 			};
@@ -170,6 +171,7 @@ export class StreamParser {
 		if (type === "tool_result") {
 			return {
 				type: "tool_result",
+				tool_use_id: typeof block.tool_use_id === "string" ? block.tool_use_id : undefined,
 				content: typeof block.content === "string" ? block.content : "",
 			};
 		}
