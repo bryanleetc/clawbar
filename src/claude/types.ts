@@ -17,5 +17,6 @@ export interface ContentBlock {
 	name?: string;
 	input?: Record<string, unknown>;
 	tool_use_id?: string;
-	content?: string;
+	// tool_result content can be a string OR an array of content blocks
+	content?: string | Array<{ type: string; text?: string; [key: string]: any }>;
 }

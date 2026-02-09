@@ -182,16 +182,27 @@ export class ChatView extends ItemView {
 		}
 
 		if (msg.type === "user" && "message" in msg) {
-			const userMsg = msg as { message: { content: ContentBlock[] } };
+			const userMsg = msg as { message: { content: any[] } };
 			const toolResults = userMsg.message.content.filter(
-				(b: ContentBlock) => b.type === "tool_result"
+				(b: any) => b.type === "tool_result"
 			);
 			for (const result of toolResults) {
 				const toolMsg = this.messages.find(
 					(m: Message) => m.role === "tool" && m.toolId === result.tool_use_id
 				);
 				if (toolMsg) {
-					toolMsg.toolResult = result.content;
+					// Handle both string content and array of content blocks
+					if (typeof result.content === "string") {
+						toolMsg.toolResult = result.content;
+					} else if (Array.isArray(result.content)) {
+						// Extract text from content blocks array
+						toolMsg.toolResult = result.content
+							.filter((block: any) => block.type === "text")
+							.map((block: any) => block.text)
+							.join("\n");
+					} else {
+						toolMsg.toolResult = JSON.stringify(result.content);
+					}
 				}
 			}
 			if (toolResults.length > 0) {
