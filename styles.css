@@ -63,6 +63,8 @@
 .clawbar-message-content {
 	font-size: 0.9rem;
 	line-height: 1.5;
+	user-select: text;
+	cursor: text;
 }
 
 .clawbar-message-content p:last-child {
@@ -202,6 +204,8 @@
 .clawbar-tool-content {
 	padding: 8px 12px;
 	background-color: var(--background-primary);
+	user-select: text;
+	cursor: text;
 }
 
 .clawbar-tool-content.clawbar-collapsed {
