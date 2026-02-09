@@ -1,8 +1,8 @@
 import { ItemView, MarkdownRenderer, Notice, WorkspaceLeaf, TFile } from "obsidian";
 import { AgentManager } from "./claude/AgentManager";
-import type { SDKMessage, PermissionResult, ContentBlock } from "./claude/types";
+import type { SDKMessage, PermissionResult, ContentBlock, SlashCommand } from "./claude/types";
 import type ClawbarPlugin from "./main";
-import { SLASH_COMMANDS } from "./constants";
+import { SLASH_COMMANDS, type SlashCommandDef } from "./constants";
 
 export const VIEW_TYPE_CHAT = "clawbar-chat-view";
 
@@ -27,6 +27,7 @@ export class ChatView extends ItemView {
 	private autocompleteEl: HTMLElement | null = null;
 	private selectedCommandIndex = -1;
 	private isRequestActive = false;
+	private allCommands: SlashCommandDef[] = [...SLASH_COMMANDS];
 	plugin: ClawbarPlugin;
 
 	constructor(leaf: WorkspaceLeaf, plugin: ClawbarPlugin) {
@@ -161,6 +162,18 @@ export class ChatView extends ItemView {
 		}
 	}
 
+	private loadSkills(skills: SlashCommand[]) {
+		// Convert SDK skills to our SlashCommandDef format and merge with built-in commands
+		const skillCommands: SlashCommandDef[] = skills.map(skill => ({
+			name: skill.name,
+			description: skill.description,
+			argumentHint: skill.argumentHint,
+			isSkill: true,
+		}));
+
+		this.allCommands = [...SLASH_COMMANDS, ...skillCommands];
+	}
+
 	private startAgent() {
 		const vaultPath = (this.app.vault.adapter as { basePath?: string }).basePath;
 		if (!vaultPath) {
@@ -173,10 +186,7 @@ export class ChatView extends ItemView {
 		this.agent.onMessage((msg: SDKMessage) => this.handleSDKMessage(msg));
 		this.agent.onError((err: string) => { this.hideThinking(); new Notice(`Claude error: ${err}`); console.log(`Claude error: ${err}`); });
 		this.agent.onPermission((toolName: string, toolInput: unknown) => this.showPermissionPrompt(toolName, toolInput));
-
-		const resumeId = this.plugin.settings.resumeLastConversation
-			? this.plugin.settings.lastSessionId ?? undefined
-			: undefined;
+		this.agent.onSkills((skills: SlashCommand[]) => this.loadSkills(skills));
 
 		// Ensure buttons are in initial state
 		this.hideThinking();
@@ -186,19 +196,11 @@ export class ChatView extends ItemView {
 
 	private handleSDKMessage(msg: SDKMessage) {
 		if (msg.type === "system" && "subtype" in msg && msg.subtype === "init") {
-			if ("session_id" in msg) {
-				this.plugin.settings.lastSessionId = msg.session_id as string;
-				this.plugin.saveSettings();
-			}
 			return;
 		}
 
 		if (msg.type === "result") {
 			this.hideThinking();
-			if ("session_id" in msg) {
-				this.plugin.settings.lastSessionId = msg.session_id as string;
-				this.plugin.saveSettings();
-			}
 			return;
 		}
 
@@ -277,8 +279,9 @@ export class ChatView extends ItemView {
 		this.inputArea.style.height = "auto";
 
 		// Build message with active file context
+		// Skip file context for skill commands (starting with /)
 		let messageToSend = text;
-		if (this.activeFile) {
+		if (this.activeFile && !text.startsWith('/')) {
 			const fileContent = await this.app.vault.read(this.activeFile);
 			messageToSend = `[Active file: ${this.activeFile.path}]\n\n${text}`;
 
@@ -569,7 +572,7 @@ export class ChatView extends ItemView {
 		const partialCommand = textBeforeCursor.substring(lastSlashIndex + 1);
 
 		// Filter commands based on partial input
-		const filteredCommands = SLASH_COMMANDS.filter(cmd =>
+		const filteredCommands = this.allCommands.filter(cmd =>
 			cmd.name.startsWith(partialCommand.toLowerCase())
 		);
 
@@ -581,7 +584,7 @@ export class ChatView extends ItemView {
 		this.showAutocomplete(filteredCommands);
 	}
 
-	private showAutocomplete(commands: typeof SLASH_COMMANDS) {
+	private showAutocomplete(commands: SlashCommandDef[]) {
 		if (!this.autocompleteEl) return;
 
 		this.autocompleteEl.empty();
@@ -592,7 +595,10 @@ export class ChatView extends ItemView {
 				cls: index === 0 ? "clawbar-autocomplete-item clawbar-autocomplete-selected" : "clawbar-autocomplete-item"
 			});
 
-			item.createDiv({ cls: "clawbar-autocomplete-name", text: `/${cmd.name}` });
+			const nameText = cmd.argumentHint
+				? `/${cmd.name} ${cmd.argumentHint}`
+				: `/${cmd.name}`;
+			item.createDiv({ cls: "clawbar-autocomplete-name", text: nameText });
 			item.createDiv({ cls: "clawbar-autocomplete-desc", text: cmd.description });
 
 			item.addEventListener("click", () => {

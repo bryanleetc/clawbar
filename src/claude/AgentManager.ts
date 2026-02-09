@@ -1,27 +1,28 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import type { Query, SlashCommand } from "@anthropic-ai/claude-agent-sdk";
 import { dirname } from "path";
 import type { SDKMessage, SDKUserMessage, PermissionResult } from "./types";
 
 export type MessageCallback = (message: SDKMessage) => void;
 export type ErrorCallback = (error: string) => void;
 export type PermissionCallback = (toolName: string, toolInput: unknown) => Promise<PermissionResult>;
+export type SkillsCallback = (skills: SlashCommand[]) => void;
 
 export class AgentManager {
 	private messageCallback: MessageCallback | null = null;
 	private errorCallback: ErrorCallback | null = null;
 	private permissionCallback: PermissionCallback | null = null;
+	private skillsCallback: SkillsCallback | null = null;
 	private abortController: AbortController | null = null;
 	private messageQueue: SDKUserMessage[] = [];
 	private messageResolve: (() => void) | null = null;
-	private sessionId: string | null = null;
 	private running = false;
+	private queryInstance: Query | null = null;
 
 	onMessage(cb: MessageCallback): void { this.messageCallback = cb; }
 	onError(cb: ErrorCallback): void { this.errorCallback = cb; }
 	onPermission(cb: PermissionCallback): void { this.permissionCallback = cb; }
-
-	getSessionId(): string | null { return this.sessionId; }
-	setSessionId(id: string | null): void { this.sessionId = id; }
+	onSkills(cb: SkillsCallback): void { this.skillsCallback = cb; }
 
 	// Create an async iterable that yields user messages as they arrive
 	private createMessageStream(): AsyncIterable<SDKUserMessage> {
@@ -42,7 +43,7 @@ export class AgentManager {
 		};
 	}
 
-	async start(cwd: string, claudePath?: string, resumeSessionId?: string): Promise<void> {
+	async start(cwd: string, claudePath?: string): Promise<void> {
 		this.abortController = new AbortController();
 		this.running = true;
 
@@ -68,20 +69,16 @@ export class AgentManager {
 			},
 		};
 
-		if (resumeSessionId) {
-			options.resume = resumeSessionId;
-		}
-
 		try {
-			const conversation = query({
+			this.queryInstance = query({
 				prompt: this.createMessageStream(),
 				options: options as Parameters<typeof query>[0]["options"],
 			});
 
-			for await (const message of conversation) {
-				if ("session_id" in message) {
-					this.sessionId = message.session_id as string;
-				}
+			// Fetch available skills after initialization
+			this.loadSkills();
+
+			for await (const message of this.queryInstance) {
 				this.messageCallback?.(message);
 			}
 		} catch (err: unknown) {
@@ -94,10 +91,21 @@ export class AgentManager {
 		}
 	}
 
+	private async loadSkills(): Promise<void> {
+		if (!this.queryInstance || !this.skillsCallback) return;
+
+		try {
+			const skills = await this.queryInstance.supportedCommands();
+			this.skillsCallback(skills);
+		} catch (err) {
+			console.error("Failed to load skills:", err);
+		}
+	}
+
 	sendMessage(text: string): void {
 		const msg: SDKUserMessage = {
 			type: "user",
-			session_id: this.sessionId || "",
+			session_id: "",
 			message: {
 				role: "user",
 				content: [{ type: "text", text }],
