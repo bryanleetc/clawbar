@@ -120,6 +120,22 @@
 	background-color: var(--interactive-accent-hover);
 }
 
+.clawbar-stop {
+	padding: 8px 16px;
+	background-color: #dc2626;
+	color: white;
+	border: none;
+	border-radius: 6px;
+	cursor: pointer;
+	font-weight: 500;
+	align-self: flex-end;
+	transition: background-color 0.15s ease;
+}
+
+.clawbar-stop:hover {
+	background-color: #b91c1c;
+}
+
 /* Thinking indicator */
 .clawbar-thinking {
 	display: flex;

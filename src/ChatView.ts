@@ -18,12 +18,15 @@ export class ChatView extends ItemView {
 	private messages: Message[] = [];
 	private messagesContainer: HTMLElement;
 	private inputArea: HTMLTextAreaElement;
+	private submitButton: HTMLButtonElement;
+	private stopButton: HTMLButtonElement;
 	private thinkingEl: HTMLElement | null = null;
 	private agent: AgentManager;
 	private activeFile: TFile | null = null;
 	private contextBar: HTMLElement;
 	private autocompleteEl: HTMLElement | null = null;
 	private selectedCommandIndex = -1;
+	private isRequestActive = false;
 	plugin: ClawbarPlugin;
 
 	constructor(leaf: WorkspaceLeaf, plugin: ClawbarPlugin) {
@@ -60,10 +63,16 @@ export class ChatView extends ItemView {
 			attr: { placeholder: "Message Claude..." },
 		});
 
-		const submitButton = inputWrapper.createEl("button", {
+		this.submitButton = inputWrapper.createEl("button", {
 			cls: "clawbar-submit",
 			text: "Send",
 		});
+
+		this.stopButton = inputWrapper.createEl("button", {
+			cls: "clawbar-stop",
+			text: "Stop",
+		});
+		this.stopButton.style.display = "none";
 
 		// Autocomplete dropdown (initially hidden)
 		this.autocompleteEl = inputWrapper.createDiv({ cls: "clawbar-autocomplete" });
@@ -110,8 +119,12 @@ export class ChatView extends ItemView {
 			}
 		});
 
-		submitButton.addEventListener("click", () => {
+		this.submitButton.addEventListener("click", () => {
 			this.handleSubmit();
+		});
+
+		this.stopButton.addEventListener("click", () => {
+			this.handleStop();
 		});
 
 		// Auto-resize textarea and handle autocomplete
@@ -164,6 +177,9 @@ export class ChatView extends ItemView {
 		const resumeId = this.plugin.settings.resumeLastConversation
 			? this.plugin.settings.lastSessionId ?? undefined
 			: undefined;
+
+		// Ensure buttons are in initial state
+		this.hideThinking();
 
 		this.agent.start(vaultPath, this.plugin.settings.claudePath);
 	}
@@ -276,12 +292,23 @@ export class ChatView extends ItemView {
 		this.agent.sendMessage(messageToSend);
 	}
 
+	private handleStop() {
+		this.agent.stop();
+		this.hideThinking();
+		new Notice("Request cancelled");
+	}
+
 	private showThinking() {
 		this.hideThinking();
 		this.thinkingEl = this.messagesContainer.createDiv({ cls: "clawbar-thinking" });
 		this.thinkingEl.createSpan({ text: "Thinking", cls: "clawbar-thinking-text" });
 		this.thinkingEl.createSpan({ cls: "clawbar-thinking-dots" });
 		this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
+
+		// Toggle buttons
+		this.isRequestActive = true;
+		this.submitButton.style.display = "none";
+		this.stopButton.style.display = "block";
 	}
 
 	private hideThinking() {
@@ -289,6 +316,11 @@ export class ChatView extends ItemView {
 			this.thinkingEl.remove();
 			this.thinkingEl = null;
 		}
+
+		// Toggle buttons
+		this.isRequestActive = false;
+		this.submitButton.style.display = "block";
+		this.stopButton.style.display = "none";
 	}
 
 	addMessage(role: "user" | "assistant", blocks: ContentBlock[]) {
