@@ -2,7 +2,7 @@ import { ItemView, MarkdownRenderer, Notice, WorkspaceLeaf, TFile } from "obsidi
 import { AgentManager } from "./claude/AgentManager";
 import type { SDKMessage, PermissionResult, ContentBlock, SlashCommand } from "./claude/types";
 import type ClawbarPlugin from "./main";
-import { SLASH_COMMANDS, type SlashCommandDef } from "./constants";
+import type { SlashCommandDef } from "./constants";
 
 export const VIEW_TYPE_CHAT = "clawbar-chat-view";
 
@@ -27,7 +27,7 @@ export class ChatView extends ItemView {
 	private autocompleteEl: HTMLElement | null = null;
 	private selectedCommandIndex = -1;
 	private isRequestActive = false;
-	private allCommands: SlashCommandDef[] = [...SLASH_COMMANDS];
+	private allCommands: SlashCommandDef[] = [];
 	plugin: ClawbarPlugin;
 
 	constructor(leaf: WorkspaceLeaf, plugin: ClawbarPlugin) {
@@ -163,15 +163,12 @@ export class ChatView extends ItemView {
 	}
 
 	private loadSkills(skills: SlashCommand[]) {
-		// Convert SDK skills to our SlashCommandDef format and merge with built-in commands
-		const skillCommands: SlashCommandDef[] = skills.map(skill => ({
+		// Convert SDK skills to our SlashCommandDef format
+		this.allCommands = skills.map(skill => ({
 			name: skill.name,
 			description: skill.description,
 			argumentHint: skill.argumentHint,
-			isSkill: true,
 		}));
-
-		this.allCommands = [...SLASH_COMMANDS, ...skillCommands];
 	}
 
 	private startAgent() {
@@ -591,23 +588,35 @@ export class ChatView extends ItemView {
 		this.selectedCommandIndex = 0;
 
 		commands.forEach((cmd, index) => {
-			const item = this.autocompleteEl!.createDiv({
-				cls: index === 0 ? "clawbar-autocomplete-item clawbar-autocomplete-selected" : "clawbar-autocomplete-item"
-			});
-
-			const nameText = cmd.argumentHint
-				? `/${cmd.name} ${cmd.argumentHint}`
-				: `/${cmd.name}`;
-			item.createDiv({ cls: "clawbar-autocomplete-name", text: nameText });
-			item.createDiv({ cls: "clawbar-autocomplete-desc", text: cmd.description });
-
-			item.addEventListener("click", () => {
-				this.selectedCommandIndex = index;
-				this.selectCommand();
-			});
+			this.renderAutocompleteItem(cmd, index === 0);
 		});
 
 		this.autocompleteEl.style.display = "block";
+	}
+
+	private renderAutocompleteItem(cmd: SlashCommandDef, isSelected: boolean) {
+		// Store the index BEFORE creating the item
+		const itemIndex = this.autocompleteEl!.querySelectorAll(".clawbar-autocomplete-item").length;
+
+		const item = this.autocompleteEl!.createDiv({
+			cls: isSelected ? "clawbar-autocomplete-item clawbar-autocomplete-selected" : "clawbar-autocomplete-item"
+		});
+
+		// Add tooltip with full description
+		item.setAttribute("title", cmd.description);
+
+		const nameText = cmd.argumentHint
+			? `/${cmd.name} ${cmd.argumentHint}`
+			: `/${cmd.name}`;
+
+		// Single line: name and description
+		item.createSpan({ cls: "clawbar-autocomplete-name", text: nameText });
+		item.createSpan({ cls: "clawbar-autocomplete-desc", text: cmd.description });
+
+		item.addEventListener("click", () => {
+			this.selectedCommandIndex = itemIndex;
+			this.selectCommand();
+		});
 	}
 
 	private hideAutocomplete() {

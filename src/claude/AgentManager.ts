@@ -57,6 +57,8 @@ export class AgentManager {
 			env,
 			pathToClaudeCodeExecutable: claudePath || undefined,
 			permissionMode: "default" as const,
+			// Load project and user settings to get project-specific skills/plugins
+			settingSources: ["user", "project", "local"] as const,
 			canUseTool: async (
 				toolName: string,
 				input: Record<string, unknown>,
