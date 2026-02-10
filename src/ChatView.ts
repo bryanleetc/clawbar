@@ -272,9 +272,23 @@ export class ChatView extends ItemView {
 		this.agent.stop();
 	}
 
+	private clearConversation() {
+		this.messages = [];
+		this.renderMessages();
+		this.agent.stop();
+		this.startAgent();
+	}
+
 	private async handleSubmit() {
 		const text = this.inputArea.value.trim();
 		if (!text) return;
+
+		// Intercept /clear to reset conversation UI and agent context
+		if (text === "/clear") {
+			this.inputArea.value = "";
+			this.clearConversation();
+			return;
+		}
 
 		// Intercept /usage to show native modal with live data from CLI
 		if (text === "/usage") {

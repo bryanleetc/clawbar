@@ -12,6 +12,7 @@ A plugin that aims to replicate a native Claude Code chat UI, similar to how it'
 
 ## Todo
 - Syntax highlighting for code in tool outputs
+- @ commands for selecting files
 - Clickable file paths
 - Command history (up/down arrows)
 - Commands show but not working properly
