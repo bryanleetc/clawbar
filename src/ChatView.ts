@@ -27,7 +27,6 @@ export class ChatView extends ItemView {
 	private contextBar: HTMLElement;
 	private autocompleteEl: HTMLElement | null = null;
 	private selectedCommandIndex = -1;
-	private isRequestActive = false;
 	private allCommands: SlashCommandDef[] = [];
 	plugin: ClawbarPlugin;
 
@@ -275,6 +274,7 @@ export class ChatView extends ItemView {
 	private clearConversation() {
 		this.messages = [];
 		this.renderMessages();
+		this.agent.detach();
 		this.agent.stop();
 		this.startAgent();
 	}
@@ -340,7 +340,6 @@ export class ChatView extends ItemView {
 		this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
 
 		// Toggle buttons
-		this.isRequestActive = true;
 		this.submitButton.style.display = "none";
 		this.stopButton.style.display = "block";
 	}
@@ -352,7 +351,6 @@ export class ChatView extends ItemView {
 		}
 
 		// Toggle buttons
-		this.isRequestActive = false;
 		this.submitButton.style.display = "block";
 		this.stopButton.style.display = "none";
 	}

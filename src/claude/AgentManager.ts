@@ -196,6 +196,14 @@ export class AgentManager {
 		}
 	}
 
+	detach(): void {
+		this.messageCallback = null;
+		this.errorCallback = null;
+		this.permissionCallback = null;
+		this.skillsCallback = null;
+		this.usageRequestCallback = null;
+	}
+
 	stop(): void {
 		this.abortController?.abort();
 		this.running = false;
