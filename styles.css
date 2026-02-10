@@ -572,3 +572,53 @@ input.clawbar-question-submit:hover {
 	color: var(--text-on-accent);
 	opacity: 0.9;
 }
+
+/* Usage Modal */
+.clawbar-usage-modal .modal-content {
+	padding: 20px;
+	min-width: 380px;
+	max-width: 560px;
+}
+
+.clawbar-usage-modal h2 {
+	margin-top: 0;
+	margin-bottom: 16px;
+	font-size: 1.2rem;
+	color: var(--text-normal);
+}
+
+.clawbar-usage-body {
+	min-height: 60px;
+}
+
+.clawbar-usage-loading {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	color: var(--text-muted);
+	padding: 8px 0;
+}
+
+.clawbar-usage-loading-text {
+	font-size: 0.9rem;
+}
+
+.clawbar-usage-spinner {
+	display: inline-block;
+	width: 14px;
+	height: 14px;
+	border: 2px solid var(--text-faint);
+	border-top-color: var(--text-accent);
+	border-radius: 50%;
+	animation: clawbar-spin 0.7s linear infinite;
+	flex-shrink: 0;
+}
+
+@keyframes clawbar-spin {
+	to { transform: rotate(360deg); }
+}
+
+.clawbar-usage-error {
+	color: var(--text-error);
+	font-style: italic;
+}

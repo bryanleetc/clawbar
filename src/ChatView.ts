@@ -3,6 +3,7 @@ import { AgentManager } from "./claude/AgentManager";
 import type { SDKMessage, PermissionResult, ContentBlock, SlashCommand } from "./claude/types";
 import type ClawbarPlugin from "./main";
 import { BUILTIN_COMMANDS, type SlashCommandDef } from "./constants";
+import { UsageModal } from "./UsageModal";
 
 export const VIEW_TYPE_CHAT = "clawbar-chat-view";
 
@@ -274,6 +275,21 @@ export class ChatView extends ItemView {
 	private async handleSubmit() {
 		const text = this.inputArea.value.trim();
 		if (!text) return;
+
+		// Intercept /usage to show native modal with live data from CLI
+		if (text === "/usage") {
+			this.inputArea.value = "";
+			const modal = new UsageModal(this.app);
+			modal.open();
+			this.agent.requestUsage((markdown) => {
+				if (markdown.trim()) {
+					modal.showContent(markdown);
+				} else {
+					modal.showError("No usage data returned.");
+				}
+			});
+			return;
+		}
 
 		this.addMessage("user", [{ type: "text", text }]);
 		this.inputArea.value = "";
