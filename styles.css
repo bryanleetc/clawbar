@@ -167,7 +167,6 @@
 	padding: 0;
 	border: 1px solid var(--background-modifier-border);
 	border-left: 3px solid var(--interactive-accent);
-	overflow: hidden;
 }
 
 .clawbar-tool-header {
