@@ -4,6 +4,7 @@ import type { SDKMessage, PermissionResult, ContentBlock, SlashCommand } from ".
 import type ClawbarPlugin from "./main";
 import { BUILTIN_COMMANDS, type SlashCommandDef } from "./constants";
 import { UsageModal } from "./UsageModal";
+import { FileSearchProvider } from "./FileSearchProvider";
 
 export const VIEW_TYPE_CHAT = "clawbar-chat-view";
 
@@ -28,6 +29,7 @@ export class ChatView extends ItemView {
 	private autocompleteEl: HTMLElement | null = null;
 	private selectedCommandIndex = -1;
 	private allCommands: SlashCommandDef[] = [];
+	private fileSearch: FileSearchProvider;
 	plugin: ClawbarPlugin;
 
 	constructor(leaf: WorkspaceLeaf, plugin: ClawbarPlugin) {
@@ -79,12 +81,18 @@ export class ChatView extends ItemView {
 		this.autocompleteEl = inputWrapper.createDiv({ cls: "clawbar-autocomplete" });
 		this.autocompleteEl.style.display = "none";
 
+		// File search provider (@-mention autocomplete)
+		this.fileSearch = new FileSearchProvider(this.app, inputWrapper, this.inputArea);
+
 		// Context bar showing active file (below input)
 		this.contextBar = container.createDiv({ cls: "clawbar-context-bar" });
 		this.updateContextBar();
 
 		// Event handlers
 		this.inputArea.addEventListener("keydown", (e) => {
+			// File search autocomplete gets first priority
+			if (this.fileSearch.handleKeydown(e)) return;
+
 			// Handle autocomplete navigation
 			if (this.autocompleteEl && this.autocompleteEl.style.display !== "none") {
 				if (e.key === "ArrowDown") {
@@ -132,7 +140,11 @@ export class ChatView extends ItemView {
 		this.inputArea.addEventListener("input", () => {
 			this.inputArea.style.height = "auto";
 			this.inputArea.style.height = Math.min(this.inputArea.scrollHeight, 150) + "px";
-			this.handleAutocomplete();
+
+			// File search autocomplete gets first priority
+			if (!this.fileSearch.handleInput()) {
+				this.handleAutocomplete();
+			}
 		});
 
 		// Register active file listener
@@ -269,6 +281,7 @@ export class ChatView extends ItemView {
 
 	async onClose() {
 		this.agent.stop();
+		this.fileSearch.destroy();
 	}
 
 	private clearConversation() {
@@ -309,17 +322,25 @@ export class ChatView extends ItemView {
 		this.inputArea.value = "";
 		this.inputArea.style.height = "auto";
 
+		// Resolve @file references
+		const { context: fileRefContext, cleanedText } = await this.fileSearch.resolveReferences(text);
+
 		// Build message with active file context
 		// Skip file context for skill commands (starting with /)
-		let messageToSend = text;
-		if (this.activeFile && !text.startsWith('/')) {
+		let messageToSend = cleanedText;
+		if (this.activeFile && !cleanedText.startsWith('/')) {
 			const fileContent = await this.app.vault.read(this.activeFile);
-			messageToSend = `[Active file: ${this.activeFile.path}]\n\n${text}`;
+			messageToSend = `[Active file: ${this.activeFile.path}]\n\n${cleanedText}`;
 
 			// Include file content if it's not too large (< 10KB)
 			if (fileContent.length < 10000) {
-				messageToSend = `[Active file: ${this.activeFile.path}]\n\`\`\`\n${fileContent}\n\`\`\`\n\n${text}`;
+				messageToSend = `[Active file: ${this.activeFile.path}]\n\`\`\`\n${fileContent}\n\`\`\`\n\n${cleanedText}`;
 			}
+		}
+
+		// Prepend referenced file contents
+		if (fileRefContext) {
+			messageToSend = fileRefContext + messageToSend;
 		}
 
 		this.showThinking();

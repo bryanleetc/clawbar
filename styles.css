@@ -572,6 +572,16 @@ input.clawbar-question-submit:hover {
 	opacity: 0.9;
 }
 
+/* File autocomplete */
+.clawbar-file-name {
+	font-family: inherit;
+	font-weight: 600;
+}
+
+.clawbar-file-path {
+	font-family: inherit;
+}
+
 /* Usage Modal */
 .clawbar-usage-modal .modal-content {
 	padding: 20px;
