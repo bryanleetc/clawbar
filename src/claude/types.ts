@@ -21,3 +21,21 @@ export interface ContentBlock {
 	// tool_result content can be a string OR an array of content blocks
 	content?: string | Array<{ type: string; text?: string; [key: string]: any }>;
 }
+
+// Unified message shape used by ChatView and ConversationStore
+export interface Message {
+	role: "user" | "assistant" | "tool";
+	blocks: ContentBlock[];
+	toolName?: string;
+	toolId?: string;
+	toolResult?: string;
+}
+
+// Metadata for a saved conversation session (stored in data.json index)
+export interface SessionMeta {
+	sessionId: string;
+	title: string;
+	createdAt: number;
+	updatedAt: number;
+	messageCount: number;
+}

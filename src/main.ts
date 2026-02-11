@@ -1,12 +1,26 @@
 import { Plugin } from "obsidian";
 import { ChatView, VIEW_TYPE_CHAT } from "./ChatView";
 import { ClawbarSettings, DEFAULT_SETTINGS, ClawbarSettingTab } from "./settings/SettingsTab";
+import { ConversationStore } from "./ConversationStore";
 
 export default class ClawbarPlugin extends Plugin {
 	settings: ClawbarSettings;
+	conversationStore: ConversationStore;
 
 	async onload() {
 		await this.loadSettings();
+
+		// Initialize conversation store
+		const vaultPath = (this.app.vault.adapter as { basePath?: string }).basePath;
+		if (vaultPath) {
+			const pluginDir = `${vaultPath}/.obsidian/plugins/${this.manifest.id}`;
+			this.conversationStore = new ConversationStore(
+				pluginDir,
+				() => this.loadData(),
+				(data) => this.saveData(data),
+			);
+			await this.conversationStore.initialize();
+		}
 
 		// Register the chat view
 		this.registerView(VIEW_TYPE_CHAT, (leaf) => new ChatView(leaf, this));

@@ -1,12 +1,17 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import ClawbarPlugin from "../main";
+import type { SessionMeta } from "../claude/types";
 
 export interface ClawbarSettings {
 	claudePath: string;
+	sessionIndex: SessionMeta[];
+	currentSessionId: string | null;
 }
 
 export const DEFAULT_SETTINGS: ClawbarSettings = {
 	claudePath: "",
+	sessionIndex: [],
+	currentSessionId: null,
 };
 
 export class ClawbarSettingTab extends PluginSettingTab {

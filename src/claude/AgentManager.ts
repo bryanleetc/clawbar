@@ -17,17 +17,20 @@ export type MessageCallback = (message: SDKMessage) => void;
 export type ErrorCallback = (error: string) => void;
 export type PermissionCallback = (toolName: string, toolInput: unknown) => Promise<PermissionResult>;
 export type SkillsCallback = (skills: SlashCommand[]) => void;
+export type SessionIdCallback = (sessionId: string) => void;
 
 export class AgentManager {
 	private messageCallback: MessageCallback | null = null;
 	private errorCallback: ErrorCallback | null = null;
 	private permissionCallback: PermissionCallback | null = null;
 	private skillsCallback: SkillsCallback | null = null;
+	private sessionIdCallback: SessionIdCallback | null = null;
 	private abortController: AbortController | null = null;
 	private messageQueue: SDKUserMessage[] = [];
 	private messageResolve: (() => void) | null = null;
 	private running = false;
 	private queryInstance: Query | null = null;
+	private sessionId: string | null = null;
 	// When set, the next assistant+result sequence is routed here instead of messageCallback
 	private usageRequestCallback: ((text: string) => void) | null = null;
 	private usageTextBuffer = "";
@@ -45,7 +48,9 @@ export class AgentManager {
 	onError(cb: ErrorCallback): void { this.errorCallback = cb; }
 	onPermission(cb: PermissionCallback): void { this.permissionCallback = cb; }
 	onSkills(cb: SkillsCallback): void { this.skillsCallback = cb; }
+	onSessionId(cb: SessionIdCallback): void { this.sessionIdCallback = cb; }
 
+	getSessionId(): string | null { return this.sessionId; }
 	getUsageStats(): SessionUsageStats { return this.usageStats; }
 
 	// Create an async iterable that yields user messages as they arrive
@@ -67,7 +72,7 @@ export class AgentManager {
 		};
 	}
 
-	async start(cwd: string, claudePath?: string): Promise<void> {
+	async start(cwd: string, claudePath?: string, resumeSessionId?: string): Promise<void> {
 		this.abortController = new AbortController();
 		this.running = true;
 
@@ -83,6 +88,7 @@ export class AgentManager {
 			permissionMode: "default" as const,
 			// Load project and user settings to get project-specific skills/plugins
 			settingSources: ["user", "project", "local"] as const,
+			...(resumeSessionId ? { resume: resumeSessionId } : {}),
 			canUseTool: async (
 				toolName: string,
 				input: Record<string, unknown>,
@@ -105,6 +111,13 @@ export class AgentManager {
 			this.loadSkills();
 
 			for await (const message of this.queryInstance) {
+				// Capture session_id from the first message that has one
+				if (!this.sessionId && 'session_id' in message && (message as any).session_id) {
+					const id: string = (message as any).session_id;
+					this.sessionId = id;
+					this.sessionIdCallback?.(id);
+				}
+
 				if (message.type === "result" && !message.is_error) {
 					// usage fields follow BetaUsage (snake_case from Anthropic API)
 					const result = message as unknown as { total_cost_usd: number; usage: Record<string, number>; modelUsage: Record<string, ModelUsage> };
@@ -201,7 +214,9 @@ export class AgentManager {
 		this.errorCallback = null;
 		this.permissionCallback = null;
 		this.skillsCallback = null;
+		this.sessionIdCallback = null;
 		this.usageRequestCallback = null;
+		this.sessionId = null;
 	}
 
 	stop(): void {

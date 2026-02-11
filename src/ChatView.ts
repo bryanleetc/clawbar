@@ -1,20 +1,12 @@
 import { ItemView, MarkdownRenderer, Notice, WorkspaceLeaf, TFile } from "obsidian";
 import { AgentManager } from "./claude/AgentManager";
-import type { SDKMessage, PermissionResult, ContentBlock, SlashCommand } from "./claude/types";
+import type { SDKMessage, PermissionResult, ContentBlock, SlashCommand, Message, SessionMeta } from "./claude/types";
 import type ClawbarPlugin from "./main";
 import { BUILTIN_COMMANDS, type SlashCommandDef } from "./constants";
 import { UsageModal } from "./UsageModal";
 import { FileSearchProvider } from "./FileSearchProvider";
 
 export const VIEW_TYPE_CHAT = "clawbar-chat-view";
-
-interface Message {
-	role: "user" | "assistant" | "tool";
-	blocks: ContentBlock[];
-	toolName?: string;
-	toolId?: string;
-	toolResult?: string;
-}
 
 export class ChatView extends ItemView {
 	private messages: Message[] = [];
@@ -30,6 +22,8 @@ export class ChatView extends ItemView {
 	private selectedCommandIndex = -1;
 	private allCommands: SlashCommandDef[] = [];
 	private fileSearch: FileSearchProvider;
+	private currentSessionId: string | null = null;
+	private sessionBarEl: HTMLElement;
 	plugin: ClawbarPlugin;
 
 	constructor(leaf: WorkspaceLeaf, plugin: ClawbarPlugin) {
@@ -54,6 +48,10 @@ export class ChatView extends ItemView {
 		const container = this.containerEl.children[1] as HTMLElement;
 		container.empty();
 		container.addClass("clawbar-container");
+
+		// Session selector bar
+		this.sessionBarEl = container.createDiv({ cls: "clawbar-session-bar" });
+		this.renderSessionBar();
 
 		// Messages container
 		this.messagesContainer = container.createDiv({ cls: "clawbar-messages" });
@@ -159,7 +157,19 @@ export class ChatView extends ItemView {
 		this.activeFile = this.app.workspace.getActiveFile();
 		this.updateContextBar();
 
-		// Start agent
+		// Auto-resume last session or start fresh
+		const lastSessionId = this.plugin.settings.currentSessionId;
+		if (lastSessionId && this.plugin.conversationStore) {
+			const messages = this.plugin.conversationStore.loadSession(lastSessionId);
+			if (messages && messages.length > 0) {
+				this.messages = messages;
+				this.currentSessionId = lastSessionId;
+				this.renderMessages();
+				this.renderSessionBar();
+				this.startAgent(lastSessionId);
+				return;
+			}
+		}
 		this.startAgent();
 	}
 
@@ -187,7 +197,7 @@ export class ChatView extends ItemView {
 		this.allCommands = [...BUILTIN_COMMANDS, ...sdkSkills];
 	}
 
-	private startAgent() {
+	private startAgent(resumeSessionId?: string) {
 		const vaultPath = (this.app.vault.adapter as { basePath?: string }).basePath;
 		if (!vaultPath) {
 			new Notice("Could not get vault base path");
@@ -200,20 +210,28 @@ export class ChatView extends ItemView {
 		this.agent.onError((err: string) => { this.hideThinking(); new Notice(`Claude error: ${err}`); console.log(`Claude error: ${err}`); });
 		this.agent.onPermission((toolName: string, toolInput: unknown) => this.showPermissionPrompt(toolName, toolInput));
 		this.agent.onSkills((skills: SlashCommand[]) => this.loadSkills(skills));
+		this.agent.onSessionId((id: string) => {
+			this.currentSessionId = id;
+			this.renderSessionBar();
+		});
 
 		// Ensure buttons are in initial state
 		this.hideThinking();
 
-		this.agent.start(vaultPath, this.plugin.settings.claudePath);
+		this.agent.start(vaultPath, this.plugin.settings.claudePath, resumeSessionId);
 	}
 
 	private handleSDKMessage(msg: SDKMessage) {
+		// Skip replayed messages during session resume — we already have UI messages loaded
+		if ('isReplay' in msg && (msg as any).isReplay === true) return;
+
 		if (msg.type === "system" && "subtype" in msg && msg.subtype === "init") {
 			return;
 		}
 
 		if (msg.type === "result") {
 			this.hideThinking();
+			this.saveCurrentConversation();
 			return;
 		}
 
@@ -280,16 +298,123 @@ export class ChatView extends ItemView {
 	}
 
 	async onClose() {
+		await this.saveCurrentConversation();
 		this.agent.stop();
 		this.fileSearch.destroy();
 	}
 
-	private clearConversation() {
+	private async clearConversation() {
+		await this.saveCurrentConversation();
 		this.messages = [];
+		this.currentSessionId = null;
 		this.renderMessages();
 		this.agent.detach();
 		this.agent.stop();
 		this.startAgent();
+		this.renderSessionBar();
+	}
+
+	// --- Session Management ---
+
+	private renderSessionBar() {
+		this.sessionBarEl.empty();
+
+		const store = this.plugin.conversationStore;
+		if (!store) return;
+
+		const sessions = store.getIndex();
+
+		const newBtn = this.sessionBarEl.createEl("button", {
+			cls: "clawbar-session-new",
+			text: "+ New",
+		});
+		newBtn.addEventListener("click", () => this.startNewConversation());
+
+		if (sessions.length > 0) {
+			const select = this.sessionBarEl.createEl("select", {
+				cls: "clawbar-session-select",
+			});
+
+			// Current conversation option
+			select.createEl("option", {
+				text: this.currentSessionId
+					? this.getSessionTitle(this.currentSessionId, sessions)
+					: "Current conversation",
+				attr: { value: this.currentSessionId ?? "__current__" },
+			});
+
+			for (const session of sessions) {
+				if (session.sessionId === this.currentSessionId) continue;
+				const date = new Date(session.updatedAt).toLocaleDateString();
+				select.createEl("option", {
+					text: `${session.title} — ${date}`,
+					attr: { value: session.sessionId },
+				});
+			}
+
+			select.addEventListener("change", (e) => {
+				const value = (e.target as HTMLSelectElement).value;
+				if (value && value !== "__current__" && value !== this.currentSessionId) {
+					this.loadConversation(value);
+				}
+			});
+		}
+	}
+
+	private getSessionTitle(sessionId: string, sessions: SessionMeta[]): string {
+		const meta = sessions.find(s => s.sessionId === sessionId);
+		return meta?.title ?? "Current conversation";
+	}
+
+	private async saveCurrentConversation() {
+		if (!this.currentSessionId || this.messages.length === 0) return;
+		if (!this.plugin.conversationStore) return;
+
+		await this.plugin.conversationStore.saveSession(
+			this.currentSessionId,
+			this.messages,
+		);
+		this.plugin.settings.currentSessionId = this.currentSessionId;
+		await this.plugin.saveSettings();
+	}
+
+	private async startNewConversation() {
+		await this.saveCurrentConversation();
+
+		this.messages = [];
+		this.currentSessionId = null;
+		this.renderMessages();
+
+		this.agent.detach();
+		this.agent.stop();
+		this.startAgent();
+
+		this.renderSessionBar();
+	}
+
+	private async loadConversation(sessionId: string) {
+		await this.saveCurrentConversation();
+
+		const store = this.plugin.conversationStore;
+		if (!store) return;
+
+		const messages = store.loadSession(sessionId);
+
+		this.agent.detach();
+		this.agent.stop();
+
+		if (messages) {
+			this.messages = messages;
+			this.currentSessionId = sessionId;
+		} else {
+			new Notice("Could not load conversation. Starting fresh.");
+			this.messages = [];
+			this.currentSessionId = null;
+		}
+
+		this.renderMessages();
+		this.renderSessionBar();
+		this.startAgent(sessionId);
 	}
 
 	private async handleSubmit() {
