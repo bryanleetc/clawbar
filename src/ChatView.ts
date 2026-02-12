@@ -239,8 +239,6 @@ export class ChatView extends ItemView {
 			const assistantMsg = msg as { message: { content: ContentBlock[] } };
 			const blocks = assistantMsg.message.content;
 			if (blocks.length > 0) {
-				this.hideThinking();
-
 				// Separate text blocks from tool_use blocks
 				// Skip AskUserQuestion — handled interactively by showQuestionPrompt
 				const textBlocks = blocks.filter((b: ContentBlock) => b.type === "text");
@@ -529,6 +527,10 @@ export class ChatView extends ItemView {
 		}
 
 		this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
+
+		if (this.thinkingEl) {
+			this.messagesContainer.appendChild(this.thinkingEl);
+		}
 	}
 
 	// --- Tool Permission Prompts (Phase 3) ---
