@@ -74,6 +74,9 @@ export default class ClawbarPlugin extends Plugin {
 	}
 
 	async saveSettings() {
+		if (this.conversationStore) {
+			this.settings.sessionIndex = this.conversationStore.getIndex();
+		}
 		await this.saveData(this.settings);
 	}
 }

@@ -11,7 +11,7 @@ A plugin that aims to replicate a native Claude Code chat UI, similar to how it'
 - Conversation persistence across sessions
 
 ## Todo
-- @ commands for selecting files
+- After tool use, the thinking spinner goes away and the send button becomes available again even while Claude is working. This makes it unclear whether Claude is still working.
 - Select and resume past conversations.
 - Syntax highlighting for code in tool outputs
 - Clickable file paths
