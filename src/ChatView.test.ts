@@ -45,11 +45,14 @@ function setupDom(view: ChatView) {
 	const container = document.createElement("div");
 	(view as any).messagesContainer = container;
 	(view as any).promptsContainer = document.createElement("div");
-	(view as any).submitButton = document.createElement("button");
-	(view as any).stopButton = document.createElement("button");
-	(view as any).stopButton.style.display = "none";
 	(view as any).messages = [];
 	(view as any).thinkingEl = null;
+	(view as any).inputComponent = {
+		_thinking: false,
+		setThinking(val: boolean) { this._thinking = val; },
+		clear() {},
+		destroy() {},
+	};
 }
 
 describe("ChatView thinking indicator", () => {
@@ -67,8 +70,7 @@ describe("ChatView thinking indicator", () => {
 		const thinkingEl = container.querySelector(".clawbar-thinking");
 		expect(thinkingEl).not.toBeNull();
 		expect((view as any).thinkingEl).toBe(thinkingEl);
-		expect((view as any).submitButton.style.display).toBe("none");
-		expect((view as any).stopButton.style.display).toBe("block");
+		expect((view as any).inputComponent._thinking).toBe(true);
 	});
 
 	it("hideThinking removes thinking element and resets buttons", () => {
@@ -78,13 +80,12 @@ describe("ChatView thinking indicator", () => {
 		const container = (view as any).messagesContainer as HTMLElement;
 		expect(container.querySelector(".clawbar-thinking")).toBeNull();
 		expect((view as any).thinkingEl).toBeNull();
-		expect((view as any).submitButton.style.display).toBe("block");
-		expect((view as any).stopButton.style.display).toBe("none");
+		expect((view as any).inputComponent._thinking).toBe(false);
 	});
 
 	it("hideThinking is idempotent when no thinking element exists", () => {
 		expect(() => (view as any).hideThinking()).not.toThrow();
-		expect((view as any).submitButton.style.display).toBe("block");
+		expect((view as any).inputComponent._thinking).toBe(false);
 	});
 
 	it("renderMessages preserves thinking element after re-render", async () => {
