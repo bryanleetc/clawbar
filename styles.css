@@ -75,6 +75,7 @@
 .clawbar-input-area {
 	position: relative;
 	display: flex;
+	flex-direction: column;
 	gap: 8px;
 	padding: 12px;
 	border-top: 1px solid var(--background-modifier-border);
@@ -82,7 +83,7 @@
 }
 
 .clawbar-input {
-	flex: 1;
+	width: 100%;
 	min-height: 40px;
 	max-height: 150px;
 	padding: 8px 12px;
@@ -94,6 +95,7 @@
 	font-size: 0.9rem;
 	resize: none;
 	line-height: 1.4;
+	box-sizing: border-box;
 }
 
 .clawbar-input:focus {
@@ -105,30 +107,47 @@
 	color: var(--text-faint);
 }
 
-.clawbar-submit {
-	padding: 8px 16px;
+.clawbar-input-buttons {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 6px;
+}
+
+.clawbar-input-buttons .clawbar-settings-btn {
+	margin-right: auto;
+}
+
+button.clawbar-submit {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 32px;
+	height: 32px;
+	padding: 0;
 	background-color: var(--interactive-accent);
 	color: var(--text-on-accent);
 	border: none;
 	border-radius: 6px;
 	cursor: pointer;
-	font-weight: 500;
-	align-self: flex-end;
+	flex-shrink: 0;
+	transition: background-color 0.15s ease, transform 0.1s ease;
 }
 
 .clawbar-submit:hover {
 	background-color: var(--interactive-accent-hover);
+	transform: translateY(-1px);
 }
 
 .clawbar-stop {
-	padding: 8px 16px;
+	padding: 6px 14px;
 	background-color: #dc2626;
 	color: white;
 	border: none;
 	border-radius: 6px;
 	cursor: pointer;
 	font-weight: 500;
-	align-self: flex-end;
+	font-size: 0.85rem;
 	transition: background-color 0.15s ease;
 }
 
@@ -148,7 +167,6 @@
 	border-radius: 6px;
 	cursor: pointer;
 	color: var(--text-muted);
-	align-self: flex-end;
 	flex-shrink: 0;
 	transition: color 0.15s ease, border-color 0.15s ease;
 }

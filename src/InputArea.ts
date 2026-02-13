@@ -29,23 +29,26 @@ export class InputArea {
 			attr: { placeholder: "Message Claude..." },
 		});
 
-		this.submitButton = inputWrapper.createEl("button", {
-			cls: "clawbar-submit",
-			text: "Send",
-		});
+		const buttonsRow = inputWrapper.createDiv({ cls: "clawbar-input-buttons" });
 
-		this.stopButton = inputWrapper.createEl("button", {
-			cls: "clawbar-stop",
-			text: "Stop",
-		});
-		this.stopButton.style.display = "none";
-
-		const settingsButton = inputWrapper.createEl("button", {
+		const settingsButton = buttonsRow.createEl("button", {
 			cls: "clawbar-settings-btn",
 			attr: { "aria-label": "MCP Settings" },
 		});
 		setIcon(settingsButton, "settings");
 		settingsButton.addEventListener("click", () => this.callbacks.onSettings?.());
+
+		this.stopButton = buttonsRow.createEl("button", {
+			cls: "clawbar-stop",
+			text: "Stop",
+		});
+		this.stopButton.style.display = "none";
+
+		this.submitButton = buttonsRow.createEl("button", {
+			cls: "clawbar-submit",
+			attr: { "aria-label": "Send" },
+		});
+		setIcon(this.submitButton, "arrow-up");
 
 		this.autocompleteEl = inputWrapper.createDiv({ cls: "clawbar-autocomplete" });
 		this.autocompleteEl.style.display = "none";
