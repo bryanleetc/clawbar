@@ -159,8 +159,9 @@ describe("ChatView permission prompts", () => {
 		setupDom(view);
 	});
 
-	it("showPermissionPrompt renders into promptsContainer, not messagesContainer", () => {
+	it("showPermissionPrompt renders into promptsContainer, not messagesContainer", async () => {
 		(view as any).showPermissionPrompt("Write", { path: "foo.md", content: "hello" });
+		await Promise.resolve();
 
 		const prompts = (view as any).promptsContainer as HTMLElement;
 		const messages = (view as any).messagesContainer as HTMLElement;
@@ -192,6 +193,7 @@ describe("ChatView permission prompts", () => {
 
 	it("Allow button resolves promise with behavior: allow", async () => {
 		const resultPromise = (view as any).showPermissionPrompt("Write", { path: "foo.md" });
+		await Promise.resolve();
 
 		const prompts = (view as any).promptsContainer as HTMLElement;
 		const allowBtn = prompts.querySelector(".clawbar-permission-allow") as HTMLButtonElement;
@@ -204,6 +206,7 @@ describe("ChatView permission prompts", () => {
 
 	it("Deny button resolves promise with behavior: deny", async () => {
 		const resultPromise = (view as any).showPermissionPrompt("Write", { path: "foo.md" });
+		await Promise.resolve();
 
 		const prompts = (view as any).promptsContainer as HTMLElement;
 		const denyBtn = prompts.querySelector(".clawbar-permission-deny") as HTMLButtonElement;
@@ -215,6 +218,7 @@ describe("ChatView permission prompts", () => {
 
 	it("prompt is removed from DOM after Allow is clicked", async () => {
 		const resultPromise = (view as any).showPermissionPrompt("Write", { path: "foo.md" });
+		await Promise.resolve();
 
 		const prompts = (view as any).promptsContainer as HTMLElement;
 		(prompts.querySelector(".clawbar-permission-allow") as HTMLButtonElement).click();
@@ -225,6 +229,7 @@ describe("ChatView permission prompts", () => {
 
 	it("prompt is removed from DOM after Deny is clicked", async () => {
 		const resultPromise = (view as any).showPermissionPrompt("Write", { path: "foo.md" });
+		await Promise.resolve();
 
 		const prompts = (view as any).promptsContainer as HTMLElement;
 		(prompts.querySelector(".clawbar-permission-deny") as HTMLButtonElement).click();
@@ -233,7 +238,7 @@ describe("ChatView permission prompts", () => {
 		expect(prompts.querySelector(".clawbar-permission-prompt")).toBeNull();
 	});
 
-	it("AskUserQuestion tool name routes to showQuestionPrompt (renders into promptsContainer)", () => {
+	it("AskUserQuestion tool name routes to showQuestionPrompt (renders into promptsContainer)", async () => {
 		const input = {
 			questions: [{
 				question: "Pick one",
@@ -243,10 +248,37 @@ describe("ChatView permission prompts", () => {
 			}],
 		};
 		(view as any).showPermissionPrompt("AskUserQuestion", input);
+		await Promise.resolve();
 
 		const prompts = (view as any).promptsContainer as HTMLElement;
 		expect(prompts.querySelector(".clawbar-question-prompt")).not.toBeNull();
 		expect(prompts.querySelector(".clawbar-permission-prompt")).toBeNull();
+	});
+
+	it("second prompt is not shown until first is answered", async () => {
+		const p1 = (view as any).showPermissionPrompt("Write", { path: "a.md" });
+		const p2 = (view as any).showPermissionPrompt("Bash", { command: "ls" });
+		await Promise.resolve();
+
+		const prompts = (view as any).promptsContainer as HTMLElement;
+		// Only the first prompt should be in the DOM
+		expect(prompts.querySelectorAll(".clawbar-permission-prompt").length).toBe(1);
+		expect(prompts.querySelector(".clawbar-permission-prompt")!.textContent).toContain("Write");
+
+		// Answer first prompt
+		(prompts.querySelector(".clawbar-permission-allow") as HTMLButtonElement).click();
+		await p1;
+		// Let queue advance (two microtask hops: result.then → permissionQueue.then)
+		await Promise.resolve();
+		await Promise.resolve();
+
+		// Now the second prompt should appear
+		expect(prompts.querySelectorAll(".clawbar-permission-prompt").length).toBe(1);
+		expect(prompts.querySelector(".clawbar-permission-prompt")!.textContent).toContain("Bash");
+
+		// Answer second prompt to clean up
+		(prompts.querySelector(".clawbar-permission-allow") as HTMLButtonElement).click();
+		await p2;
 	});
 
 	it("question prompt survives renderMessages()", async () => {

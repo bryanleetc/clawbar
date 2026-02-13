@@ -16,6 +16,7 @@ export class ChatView extends ItemView {
 	private stopButton: HTMLButtonElement;
 	private thinkingEl: HTMLElement | null = null;
 	private promptsContainer: HTMLElement;
+	private permissionQueue: Promise<void> = Promise.resolve();
 	private agent: AgentManager;
 	private activeFile: TFile | null = null;
 	private contextBar: HTMLElement;
@@ -309,6 +310,8 @@ export class ChatView extends ItemView {
 		await this.saveCurrentConversation();
 		this.messages = [];
 		this.currentSessionId = null;
+		this.permissionQueue = Promise.resolve();
+		this.promptsContainer.empty();
 		this.renderMessages();
 		this.agent.detach();
 		this.agent.stop();
@@ -385,6 +388,8 @@ export class ChatView extends ItemView {
 
 		this.messages = [];
 		this.currentSessionId = null;
+		this.permissionQueue = Promise.resolve();
+		this.promptsContainer.empty();
 		this.renderMessages();
 
 		this.agent.detach();
@@ -404,6 +409,9 @@ export class ChatView extends ItemView {
 
 		this.agent.detach();
 		this.agent.stop();
+
+		this.permissionQueue = Promise.resolve();
+		this.promptsContainer.empty();
 
 		if (messages) {
 			this.messages = messages;
@@ -540,6 +548,15 @@ export class ChatView extends ItemView {
 	// --- Tool Permission Prompts (Phase 3) ---
 
 	private showPermissionPrompt(toolName: string, toolInput: unknown): Promise<PermissionResult> {
+		const result: Promise<PermissionResult> = this.permissionQueue.then(() =>
+			this.doShowPermissionPrompt(toolName, toolInput)
+		);
+		// Advance the queue tail; ignore errors so the chain never breaks
+		this.permissionQueue = result.then(() => {}, () => {});
+		return result;
+	}
+
+	private doShowPermissionPrompt(toolName: string, toolInput: unknown): Promise<PermissionResult> {
 		if (toolName === "AskUserQuestion") {
 			return this.showQuestionPrompt(toolInput as Record<string, unknown>);
 		}

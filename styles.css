@@ -409,6 +409,7 @@ button.clawbar-question-option {
 	height: auto;
 	transition: all 0.15s ease;
 	text-align: left;
+	text-wrap: auto;
 	width: 100%;
 }
 
