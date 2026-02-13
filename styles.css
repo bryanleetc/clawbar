@@ -136,6 +136,29 @@
 	background-color: #b91c1c;
 }
 
+.clawbar-settings-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 32px;
+	height: 32px;
+	padding: 0;
+	background: none;
+	border: 1px solid transparent;
+	border-radius: 6px;
+	cursor: pointer;
+	color: var(--text-muted);
+	align-self: flex-end;
+	flex-shrink: 0;
+	transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.clawbar-settings-btn:hover {
+	color: var(--text-normal);
+	border-color: var(--background-modifier-border);
+	background-color: var(--background-modifier-hover);
+}
+
 /* Thinking indicator */
 .clawbar-thinking {
 	display: flex;
@@ -636,6 +659,86 @@ input.clawbar-question-submit:hover {
 .clawbar-usage-error {
 	color: var(--text-error);
 	font-style: italic;
+}
+
+/* MCP Settings Modal */
+.clawbar-mcp-modal .modal-content {
+	padding: 20px;
+	min-width: 420px;
+	max-width: 600px;
+}
+
+.clawbar-mcp-modal h2 {
+	margin-top: 0;
+	margin-bottom: 16px;
+	font-size: 1.2rem;
+	color: var(--text-normal);
+}
+
+.clawbar-mcp-modal h3 {
+	margin-top: 0;
+	margin-bottom: 8px;
+	font-size: 0.9rem;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	color: var(--text-muted);
+}
+
+.clawbar-mcp-section {
+	margin-bottom: 20px;
+}
+
+.clawbar-mcp-loading {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	color: var(--text-muted);
+	padding: 8px 0;
+}
+
+.clawbar-mcp-loading-text {
+	font-size: 0.9rem;
+}
+
+.clawbar-mcp-empty,
+.clawbar-mcp-error {
+	font-size: 0.9rem;
+	color: var(--text-muted);
+	font-style: italic;
+	padding: 4px 0;
+}
+
+.clawbar-mcp-error {
+	color: var(--text-error);
+}
+
+.clawbar-mcp-footer {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+	padding-top: 16px;
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+.clawbar-mcp-save,
+.clawbar-mcp-cancel {
+	padding: 8px 20px;
+	border: none;
+	border-radius: 6px;
+	font-weight: 500;
+	cursor: pointer;
+	font-size: 0.9rem;
+}
+
+.clawbar-mcp-cancel {
+	background-color: var(--background-secondary);
+	color: var(--text-normal);
+	border: 1px solid var(--background-modifier-border);
+}
+
+.clawbar-mcp-cancel:hover {
+	background-color: var(--background-modifier-hover);
 }
 
 /* Session selector bar */

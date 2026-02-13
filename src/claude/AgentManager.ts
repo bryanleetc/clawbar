@@ -1,5 +1,5 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import type { Query, SlashCommand, ModelUsage } from "@anthropic-ai/claude-agent-sdk";
+import type { Query, SlashCommand, ModelUsage, McpServerStatus } from "@anthropic-ai/claude-agent-sdk";
 import { dirname } from "path";
 import type { SDKMessage, SDKUserMessage, PermissionResult } from "./types";
 
@@ -225,4 +225,14 @@ export class AgentManager {
 	}
 
 	isRunning(): boolean { return this.running; }
+
+	async getMcpServerStatus(): Promise<McpServerStatus[]> {
+		if (!this.queryInstance) return [];
+		return this.queryInstance.mcpServerStatus();
+	}
+
+	async toggleMcpServer(name: string, enabled: boolean): Promise<void> {
+		if (!this.queryInstance) return;
+		await this.queryInstance.toggleMcpServer(name, enabled);
+	}
 }

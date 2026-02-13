@@ -6,12 +6,14 @@ export interface ClawbarSettings {
 	claudePath: string;
 	sessionIndex: SessionMeta[];
 	currentSessionId: string | null;
+	disabledMcpServers: string[];
 }
 
 export const DEFAULT_SETTINGS: ClawbarSettings = {
 	claudePath: "",
 	sessionIndex: [],
 	currentSessionId: null,
+	disabledMcpServers: [],
 };
 
 export class ClawbarSettingTab extends PluginSettingTab {

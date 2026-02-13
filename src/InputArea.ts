@@ -1,10 +1,11 @@
-import { App, TFile } from "obsidian";
+import { App, TFile, setIcon } from "obsidian";
 import { BUILTIN_COMMANDS, type SlashCommandDef } from "./constants";
 import { FileSearchProvider } from "./FileSearchProvider";
 
 export interface InputAreaCallbacks {
 	onSubmit: (text: string) => void;
 	onStop: () => void;
+	onSettings?: () => void;
 }
 
 export class InputArea {
@@ -38,6 +39,13 @@ export class InputArea {
 			text: "Stop",
 		});
 		this.stopButton.style.display = "none";
+
+		const settingsButton = inputWrapper.createEl("button", {
+			cls: "clawbar-settings-btn",
+			attr: { "aria-label": "MCP Settings" },
+		});
+		setIcon(settingsButton, "settings");
+		settingsButton.addEventListener("click", () => this.callbacks.onSettings?.());
 
 		this.autocompleteEl = inputWrapper.createDiv({ cls: "clawbar-autocomplete" });
 		this.autocompleteEl.style.display = "none";

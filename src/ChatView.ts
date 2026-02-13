@@ -4,6 +4,7 @@ import type { SDKMessage, PermissionResult, ContentBlock, SlashCommand, Message,
 import type ClawbarPlugin from "./main";
 import { BUILTIN_COMMANDS } from "./constants";
 import { UsageModal } from "./UsageModal";
+import { McpSettingsModal } from "./McpSettingsModal";
 import { InputArea } from "./InputArea";
 
 export const VIEW_TYPE_CHAT = "clawbar-chat-view";
@@ -58,6 +59,7 @@ export class ChatView extends ItemView {
 		this.inputComponent = new InputArea(container, this.app, {
 			onSubmit: (text) => this.handleSubmit(text),
 			onStop: () => this.handleStop(),
+			onSettings: () => this.openSettingsModal(),
 		});
 
 		// Register active file listener
@@ -118,6 +120,21 @@ export class ChatView extends ItemView {
 
 		// Ensure buttons are in initial state
 		this.hideThinking();
+
+		// Re-apply persisted disabled MCPs after a short delay to let the agent initialize
+		const disabledMcps = this.plugin.settings.disabledMcpServers;
+		if (disabledMcps.length > 0) {
+			setTimeout(async () => {
+				for (const name of disabledMcps) {
+					try {
+						await this.agent.toggleMcpServer(name, false);
+						console.log(`[Clawbar] MCP server disabled: ${name}`);
+					} catch (err) {
+						console.error(`[Clawbar] Failed to disable MCP server "${name}":`, err);
+					}
+				}
+			}, 2000);
+		}
 
 		this.agent.start(vaultPath, this.plugin.settings.claudePath, resumeSessionId);
 	}
@@ -378,6 +395,10 @@ export class ChatView extends ItemView {
 		this.agent.stop();
 		this.hideThinking();
 		new Notice("Request cancelled");
+	}
+
+	private openSettingsModal() {
+		new McpSettingsModal(this.app, this.agent, this.plugin).open();
 	}
 
 	private showThinking() {
