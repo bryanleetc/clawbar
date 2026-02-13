@@ -263,6 +263,11 @@
 	margin-bottom: 0;
 }
 
+/* Prompts container (permission + question prompts, separate from messages list) */
+.clawbar-prompts:empty {
+	display: none;
+}
+
 /* Permission prompts */
 .clawbar-permission-prompt {
 	padding: 16px;

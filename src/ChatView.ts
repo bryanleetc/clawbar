@@ -15,6 +15,7 @@ export class ChatView extends ItemView {
 	private submitButton: HTMLButtonElement;
 	private stopButton: HTMLButtonElement;
 	private thinkingEl: HTMLElement | null = null;
+	private promptsContainer: HTMLElement;
 	private agent: AgentManager;
 	private activeFile: TFile | null = null;
 	private contextBar: HTMLElement;
@@ -55,6 +56,9 @@ export class ChatView extends ItemView {
 
 		// Messages container
 		this.messagesContainer = container.createDiv({ cls: "clawbar-messages" });
+
+		// Prompts container (permission/question prompts — never cleared by renderMessages)
+		this.promptsContainer = container.createDiv({ cls: "clawbar-prompts" });
 
 		// Input area
 		const inputWrapper = container.createDiv({ cls: "clawbar-input-area" });
@@ -541,7 +545,7 @@ export class ChatView extends ItemView {
 		}
 
 		return new Promise((resolve) => {
-			const promptEl = this.messagesContainer.createDiv({ cls: "clawbar-permission-prompt" });
+			const promptEl = this.promptsContainer.createDiv({ cls: "clawbar-permission-prompt" });
 
 			const header = promptEl.createDiv({ cls: "clawbar-permission-header" });
 			header.createSpan({ text: `Claude wants to use: ${toolName}` });
@@ -572,7 +576,6 @@ export class ChatView extends ItemView {
 				resolve({ behavior: "deny", message: "User denied tool use" });
 			});
 
-			this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
 		});
 	}
 
@@ -586,7 +589,7 @@ export class ChatView extends ItemView {
 			}>) || [];
 			const answers: Record<string, string> = {};
 
-			const promptEl = this.messagesContainer.createDiv({ cls: "clawbar-question-prompt" });
+			const promptEl = this.promptsContainer.createDiv({ cls: "clawbar-question-prompt" });
 
 			for (const q of questions) {
 				const questionEl = promptEl.createDiv({ cls: "clawbar-question" });
@@ -660,7 +663,6 @@ export class ChatView extends ItemView {
 				});
 			});
 
-			this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
 		});
 	}
 

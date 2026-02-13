@@ -44,6 +44,7 @@ function createChatView(): ChatView {
 function setupDom(view: ChatView) {
 	const container = document.createElement("div");
 	(view as any).messagesContainer = container;
+	(view as any).promptsContainer = document.createElement("div");
 	(view as any).submitButton = document.createElement("button");
 	(view as any).stopButton = document.createElement("button");
 	(view as any).stopButton.style.display = "none";
@@ -147,5 +148,121 @@ describe("ChatView thinking indicator", () => {
 
 		const container = (view as any).messagesContainer as HTMLElement;
 		expect(container.querySelectorAll(".clawbar-thinking").length).toBe(1);
+	});
+});
+
+describe("ChatView permission prompts", () => {
+	let view: ChatView;
+
+	beforeEach(() => {
+		view = createChatView();
+		setupDom(view);
+	});
+
+	it("showPermissionPrompt renders into promptsContainer, not messagesContainer", () => {
+		(view as any).showPermissionPrompt("Write", { path: "foo.md", content: "hello" });
+
+		const prompts = (view as any).promptsContainer as HTMLElement;
+		const messages = (view as any).messagesContainer as HTMLElement;
+
+		expect(prompts.querySelector(".clawbar-permission-prompt")).not.toBeNull();
+		expect(messages.querySelector(".clawbar-permission-prompt")).toBeNull();
+	});
+
+	it("permission prompt survives renderMessages()", async () => {
+		(view as any).showPermissionPrompt("Write", { path: "foo.md" });
+
+		(view as any).messages.push({ role: "user", blocks: [{ type: "text", text: "hi" }] });
+		await (view as any).renderMessages();
+
+		const prompts = (view as any).promptsContainer as HTMLElement;
+		expect(prompts.querySelector(".clawbar-permission-prompt")).not.toBeNull();
+	});
+
+	it("permission prompt survives multiple renderMessages() calls", async () => {
+		(view as any).showPermissionPrompt("Bash", { command: "ls" });
+
+		await (view as any).renderMessages();
+		await (view as any).renderMessages();
+		await (view as any).renderMessages();
+
+		const prompts = (view as any).promptsContainer as HTMLElement;
+		expect(prompts.querySelector(".clawbar-permission-prompt")).not.toBeNull();
+	});
+
+	it("Allow button resolves promise with behavior: allow", async () => {
+		const resultPromise = (view as any).showPermissionPrompt("Write", { path: "foo.md" });
+
+		const prompts = (view as any).promptsContainer as HTMLElement;
+		const allowBtn = prompts.querySelector(".clawbar-permission-allow") as HTMLButtonElement;
+		allowBtn.click();
+
+		const result = await resultPromise;
+		expect(result.behavior).toBe("allow");
+		expect(result.updatedInput).toEqual({ path: "foo.md" });
+	});
+
+	it("Deny button resolves promise with behavior: deny", async () => {
+		const resultPromise = (view as any).showPermissionPrompt("Write", { path: "foo.md" });
+
+		const prompts = (view as any).promptsContainer as HTMLElement;
+		const denyBtn = prompts.querySelector(".clawbar-permission-deny") as HTMLButtonElement;
+		denyBtn.click();
+
+		const result = await resultPromise;
+		expect(result.behavior).toBe("deny");
+	});
+
+	it("prompt is removed from DOM after Allow is clicked", async () => {
+		const resultPromise = (view as any).showPermissionPrompt("Write", { path: "foo.md" });
+
+		const prompts = (view as any).promptsContainer as HTMLElement;
+		(prompts.querySelector(".clawbar-permission-allow") as HTMLButtonElement).click();
+		await resultPromise;
+
+		expect(prompts.querySelector(".clawbar-permission-prompt")).toBeNull();
+	});
+
+	it("prompt is removed from DOM after Deny is clicked", async () => {
+		const resultPromise = (view as any).showPermissionPrompt("Write", { path: "foo.md" });
+
+		const prompts = (view as any).promptsContainer as HTMLElement;
+		(prompts.querySelector(".clawbar-permission-deny") as HTMLButtonElement).click();
+		await resultPromise;
+
+		expect(prompts.querySelector(".clawbar-permission-prompt")).toBeNull();
+	});
+
+	it("AskUserQuestion tool name routes to showQuestionPrompt (renders into promptsContainer)", () => {
+		const input = {
+			questions: [{
+				question: "Pick one",
+				header: "Choice",
+				options: [{ label: "A", description: "Option A" }],
+				multiSelect: false,
+			}],
+		};
+		(view as any).showPermissionPrompt("AskUserQuestion", input);
+
+		const prompts = (view as any).promptsContainer as HTMLElement;
+		expect(prompts.querySelector(".clawbar-question-prompt")).not.toBeNull();
+		expect(prompts.querySelector(".clawbar-permission-prompt")).toBeNull();
+	});
+
+	it("question prompt survives renderMessages()", async () => {
+		const input = {
+			questions: [{
+				question: "Pick one",
+				header: "Choice",
+				options: [{ label: "A", description: "" }],
+				multiSelect: false,
+			}],
+		};
+		(view as any).showPermissionPrompt("AskUserQuestion", input);
+
+		await (view as any).renderMessages();
+
+		const prompts = (view as any).promptsContainer as HTMLElement;
+		expect(prompts.querySelector(".clawbar-question-prompt")).not.toBeNull();
 	});
 });
