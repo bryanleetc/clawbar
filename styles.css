@@ -759,6 +759,63 @@ input.clawbar-question-submit:hover {
 	background-color: var(--background-modifier-hover);
 }
 
+/* Narrative (thinking) blocks */
+.clawbar-narrative {
+	border-radius: 6px;
+	overflow: hidden;
+}
+
+.clawbar-narrative-header {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 5px 8px;
+	cursor: pointer;
+	user-select: none;
+	border-radius: 6px;
+	transition: background-color 0.1s ease;
+}
+
+.clawbar-narrative-header:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+.clawbar-narrative-toggle {
+	font-size: 0.65rem;
+	color: var(--text-faint);
+	width: 10px;
+	flex-shrink: 0;
+}
+
+.clawbar-narrative-label {
+	font-size: 0.8rem;
+	color: var(--text-faint);
+	font-style: italic;
+}
+
+.clawbar-narrative-content {
+	padding: 2px 10px 8px 24px;
+	font-size: 0.875rem;
+	line-height: 1.5;
+	user-select: text;
+	cursor: text;
+}
+
+.clawbar-narrative-content.clawbar-collapsed {
+	display: none;
+}
+
+.clawbar-narrative-content,
+.clawbar-narrative-content p,
+.clawbar-narrative-content li,
+.clawbar-narrative-content code {
+	color: var(--text-muted);
+}
+
+.clawbar-narrative-content p:last-child {
+	margin-bottom: 0;
+}
+
 /* Session selector bar */
 .clawbar-session-bar {
 	display: flex;

@@ -29,6 +29,7 @@ export interface Message {
 	toolName?: string;
 	toolId?: string;
 	toolResult?: string;
+	isThinking?: boolean;
 }
 
 // Metadata for a saved conversation session (stored in data.json index)

@@ -165,7 +165,9 @@ export class ChatView extends ItemView {
 				);
 
 				if (textBlocks.length > 0) {
-					this.addMessage("assistant", textBlocks);
+					// Text alongside tool_use = intermediate narration (thinking)
+					const isThinking = toolUseBlocks.length > 0;
+					this.addMessage("assistant", textBlocks, isThinking);
 				}
 
 				for (const toolBlock of toolUseBlocks) {
@@ -420,8 +422,8 @@ export class ChatView extends ItemView {
 		this.inputComponent?.setThinking(false);
 	}
 
-	addMessage(role: "user" | "assistant", blocks: ContentBlock[]) {
-		this.messages.push({ role, blocks });
+	addMessage(role: "user" | "assistant", blocks: ContentBlock[], isThinking = false) {
+		this.messages.push({ role, blocks, isThinking });
 		this.renderMessages();
 	}
 
@@ -431,6 +433,8 @@ export class ChatView extends ItemView {
 		for (const msg of this.messages) {
 			if (msg.role === "tool") {
 				this.renderToolMessage(msg);
+			} else if (msg.isThinking) {
+				await this.renderNarrativeMessage(msg);
 			} else {
 				const msgEl = this.messagesContainer.createDiv({
 					cls: `clawbar-message clawbar-message-${msg.role}`,
@@ -631,6 +635,34 @@ export class ChatView extends ItemView {
 		}
 
 		// Toggle collapse/expand
+		header.addEventListener("click", () => {
+			const isCollapsed = content.hasClass("clawbar-collapsed");
+			if (isCollapsed) {
+				content.removeClass("clawbar-collapsed");
+				toggle.setText("▼");
+			} else {
+				content.addClass("clawbar-collapsed");
+				toggle.setText("▶");
+			}
+		});
+	}
+
+	private async renderNarrativeMessage(msg: Message) {
+		const el = this.messagesContainer.createDiv({ cls: "clawbar-narrative" });
+
+		const header = el.createDiv({ cls: "clawbar-narrative-header" });
+		const toggle = header.createSpan({ cls: "clawbar-narrative-toggle", text: "▶" });
+		header.createSpan({ cls: "clawbar-narrative-label", text: "Thinking" });
+
+		const content = el.createDiv({ cls: "clawbar-narrative-content clawbar-collapsed" });
+
+		for (const block of msg.blocks) {
+			if (block.type === "text" && block.text) {
+				const textEl = content.createDiv({ cls: "clawbar-text-block" });
+				await MarkdownRenderer.render(this.app, block.text, textEl, "", this);
+			}
+		}
+
 		header.addEventListener("click", () => {
 			const isCollapsed = content.hasClass("clawbar-collapsed");
 			if (isCollapsed) {
