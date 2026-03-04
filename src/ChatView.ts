@@ -110,7 +110,17 @@ export class ChatView extends ItemView {
 		this.agent = new AgentManager();
 
 		this.agent.onMessage((msg: SDKMessage) => this.handleSDKMessage(msg));
-		this.agent.onError((err: string) => { this.hideThinking(); new Notice(`Claude error: ${err}`); console.log(`Claude error: ${err}`); });
+		this.agent.onError((err: string) => {
+			this.hideThinking();
+			if (resumeSessionId) {
+				// Session resume failed (e.g. stale session after vault reopen) — retry fresh
+				console.log(`[Clawbar] Session resume failed, starting fresh. Error: ${err}`);
+				this.startAgent();
+			} else {
+				new Notice(`Claude error: ${err}`);
+				console.log(`Claude error: ${err}`);
+			}
+		});
 		this.agent.onPermission((toolName: string, toolInput: unknown) => this.showPermissionPrompt(toolName, toolInput));
 		this.agent.onSkills((skills: SlashCommand[]) => this.loadSkills(skills));
 		this.agent.onSessionId((id: string) => {
