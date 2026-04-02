@@ -72,12 +72,16 @@ export class AgentManager {
 		};
 	}
 
-	async start(cwd: string, claudePath?: string, resumeSessionId?: string): Promise<void> {
+	async start(cwd: string, claudePath?: string, resumeSessionId?: string, configDir?: string): Promise<void> {
 		this.abortController = new AbortController();
 		this.running = true;
 
-		const env = claudePath
-			? { ...process.env, PATH: `${dirname(claudePath)}:${process.env.PATH}` }
+		const env = (claudePath || configDir)
+			? {
+				...process.env,
+				...(claudePath ? { PATH: `${dirname(claudePath)}:${process.env.PATH}` } : {}),
+				...(configDir ? { CLAUDE_CONFIG_DIR: configDir } : {}),
+			}
 			: undefined;
 
 		const options: Record<string, unknown> = {

@@ -69,6 +69,16 @@ export default class ClawbarPlugin extends Plugin {
 		}
 	}
 
+	async onAccountChange() {
+		const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_CHAT);
+		for (const leaf of leaves) {
+			const view = leaf.view;
+			if (view instanceof ChatView) {
+				await view.restartForAccountChange();
+			}
+		}
+	}
+
 	async loadSettings() {
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
 	}

@@ -1,4 +1,5 @@
 import { ItemView, MarkdownRenderer, Notice, WorkspaceLeaf, TFile } from "obsidian";
+import { homedir } from "os";
 import { AgentManager } from "./claude/AgentManager";
 import type { SDKMessage, PermissionResult, ContentBlock, SlashCommand, Message, SessionMeta } from "./claude/types";
 import type ClawbarPlugin from "./main";
@@ -146,7 +147,11 @@ export class ChatView extends ItemView {
 			}, 2000);
 		}
 
-		this.agent.start(vaultPath, this.plugin.settings.claudePath, resumeSessionId);
+		const activeAccount = this.plugin.settings.accounts?.find(
+			(a) => a.id === this.plugin.settings.activeAccountId
+		);
+		const configDir = activeAccount?.configDir?.replace(/^~/, homedir());
+		this.agent.start(vaultPath, this.plugin.settings.claudePath, resumeSessionId, configDir);
 	}
 
 	private handleSDKMessage(msg: SDKMessage) {
@@ -229,6 +234,10 @@ export class ChatView extends ItemView {
 		await this.saveCurrentConversation();
 		this.agent.stop();
 		this.inputComponent.destroy();
+	}
+
+	async restartForAccountChange() {
+		await this.clearConversation();
 	}
 
 	private async clearConversation() {
