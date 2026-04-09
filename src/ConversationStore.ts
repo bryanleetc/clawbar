@@ -2,22 +2,23 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "
 import { join } from "path";
 import type { Message, SessionMeta } from "./claude/types";
 
-const MAX_SESSIONS = 10;
-
 export class ConversationStore {
 	private sessionsDir: string;
 	private index: SessionMeta[] = [];
 	private loadPluginData: () => Promise<any>;
 	private savePluginData: (data: any) => Promise<void>;
+	private getMaxSessions: () => number;
 
 	constructor(
 		pluginDir: string,
 		loadData: () => Promise<any>,
 		saveData: (data: any) => Promise<void>,
+		getMaxSessions: () => number,
 	) {
 		this.sessionsDir = join(pluginDir, "sessions");
 		this.loadPluginData = loadData;
 		this.savePluginData = saveData;
+		this.getMaxSessions = getMaxSessions;
 	}
 
 	async initialize(): Promise<void> {
@@ -54,7 +55,7 @@ export class ConversationStore {
 		}
 
 		// Prune oldest sessions beyond the cap
-		while (this.index.length > MAX_SESSIONS) {
+		while (this.index.length > this.getMaxSessions()) {
 			const removed = this.index.pop()!;
 			this.deleteSessionFile(removed.sessionId);
 		}

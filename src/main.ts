@@ -18,6 +18,7 @@ export default class ClawbarPlugin extends Plugin {
 				pluginDir,
 				() => this.loadData(),
 				(data) => this.saveData(data),
+				() => this.settings.maxSavedChats,
 			);
 			await this.conversationStore.initialize();
 		}
