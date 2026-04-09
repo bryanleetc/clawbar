@@ -1,18 +1,12 @@
 # Obsidian Clawbar
 
-A plugin that aims to replicate a native Claude Code chat UI, similar to how it's done today in Visual Studio Code.
+A plugin that aims to replicate a native Claude Code chat UI, similar to the Visual Studio Code plugin.
 
 ## Features
 - Native chat UI (not just a terminal wrapper)
-- Awareness of current active file
+- Multi-account support
+- Awareness of current active note
 - Polished permission and question prompts with smooth animations
 - Interactive tool use visualization with collapsible sections
 - Markdown rendering for assistant responses
 - Conversation persistence across sessions
-
-## Todo
-- Model selection
-- Syntax highlighting for code in tool outputs
-- Clickable file paths
-- Command history (up/down arrows)
-- Commands show but not working properly
