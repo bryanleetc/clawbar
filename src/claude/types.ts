@@ -8,6 +8,7 @@ export type {
 	SDKPartialAssistantMessage,
 	PermissionResult,
 	SlashCommand,
+	ModelInfo,
 } from "@anthropic-ai/claude-agent-sdk";
 
 // ContentBlock stays the same shape — it's what's inside message.content

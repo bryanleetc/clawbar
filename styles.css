@@ -37,27 +37,21 @@
 }
 
 .clawbar-message {
-	padding: 12px;
-	border-radius: 8px;
+	border-radius: 10px;
 	max-width: 100%;
 }
 
 .clawbar-message-user {
+	align-self: flex-end;
+	max-width: 88%;
+	padding: 8px 12px;
 	background-color: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	border-bottom-right-radius: 3px;
 }
 
 .clawbar-message-assistant {
-	background-color: var(--background-primary-alt);
-	border: 1px solid var(--background-modifier-border);
-}
-
-.clawbar-message-role {
-	font-size: 0.75rem;
-	font-weight: 600;
-	color: var(--text-muted);
-	margin-bottom: 4px;
-	text-transform: uppercase;
-	letter-spacing: 0.05em;
+	padding: 2px 2px 4px;
 }
 
 .clawbar-message-content {
@@ -116,6 +110,33 @@
 
 .clawbar-input-buttons .clawbar-settings-btn {
 	margin-right: auto;
+}
+
+/* Model selector (sits bottom-left, before the settings button) */
+select.clawbar-model-select {
+	max-width: 45%;
+	padding: 3px 6px;
+	font-size: 0.75rem;
+	height: 28px;
+	background-color: transparent;
+	color: var(--text-muted);
+	border: 1px solid transparent;
+	border-radius: 6px;
+	cursor: pointer;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	box-shadow: none;
+}
+
+select.clawbar-model-select:hover {
+	color: var(--text-normal);
+	border-color: var(--background-modifier-border);
+	background-color: var(--background-modifier-hover);
+}
+
+select.clawbar-model-select:focus {
+	outline: none;
+	border-color: var(--interactive-accent);
 }
 
 button.clawbar-submit {
@@ -177,6 +198,39 @@ button.clawbar-submit {
 	background-color: var(--background-modifier-hover);
 }
 
+/* Empty state */
+.clawbar-empty-state {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	padding: 24px;
+	text-align: center;
+	color: var(--text-muted);
+}
+
+.clawbar-empty-icon {
+	font-size: 2rem;
+	color: var(--interactive-accent);
+	opacity: 0.8;
+	margin-bottom: 4px;
+}
+
+.clawbar-empty-title {
+	font-size: 1.05rem;
+	font-weight: 600;
+	color: var(--text-normal);
+}
+
+.clawbar-empty-hint {
+	font-size: 0.85rem;
+	color: var(--text-faint);
+	max-width: 260px;
+	line-height: 1.5;
+}
+
 /* Thinking indicator */
 .clawbar-thinking {
 	display: flex;
@@ -189,6 +243,22 @@ button.clawbar-submit {
 
 .clawbar-thinking-text {
 	font-style: italic;
+	background: linear-gradient(
+		90deg,
+		var(--text-muted) 25%,
+		var(--text-normal) 50%,
+		var(--text-muted) 75%
+	);
+	background-size: 200% 100%;
+	-webkit-background-clip: text;
+	background-clip: text;
+	-webkit-text-fill-color: transparent;
+	animation: thinking-shimmer 2s linear infinite;
+}
+
+@keyframes thinking-shimmer {
+	from { background-position: 200% 0; }
+	to { background-position: -200% 0; }
 }
 
 .clawbar-thinking-dots::after {
@@ -228,6 +298,7 @@ button.clawbar-submit {
 	font-size: 0.7rem;
 	color: var(--text-muted);
 	width: 12px;
+	transition: transform 0.12s ease;
 }
 
 .clawbar-tool-name {
@@ -235,7 +306,18 @@ button.clawbar-submit {
 	font-size: 0.85rem;
 	color: var(--text-normal);
 	font-family: var(--font-monospace);
+	flex-shrink: 0;
+}
+
+.clawbar-tool-summary {
 	flex: 1;
+	min-width: 0;
+	font-size: 0.78rem;
+	color: var(--text-muted);
+	font-family: var(--font-monospace);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 .clawbar-tool-status {
@@ -298,6 +380,10 @@ button.clawbar-submit {
 	font-family: var(--font-monospace);
 	white-space: pre-wrap;
 	word-break: break-word;
+}
+
+.clawbar-text-block:first-child p:first-child {
+	margin-top: 0;
 }
 
 .clawbar-text-block p:last-child {

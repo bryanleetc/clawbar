@@ -1,5 +1,5 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import type { Query, SlashCommand, ModelUsage, McpServerStatus } from "@anthropic-ai/claude-agent-sdk";
+import type { Query, SlashCommand, ModelUsage, McpServerStatus, ModelInfo } from "@anthropic-ai/claude-agent-sdk";
 import { dirname } from "path";
 import type { SDKMessage, SDKUserMessage, PermissionResult } from "./types";
 
@@ -18,6 +18,7 @@ export type ErrorCallback = (error: string) => void;
 export type PermissionCallback = (toolName: string, toolInput: unknown) => Promise<PermissionResult>;
 export type SkillsCallback = (skills: SlashCommand[]) => void;
 export type SessionIdCallback = (sessionId: string) => void;
+export type ModelsCallback = (models: ModelInfo[], currentModel: string | null) => void;
 
 export class AgentManager {
 	private messageCallback: MessageCallback | null = null;
@@ -25,6 +26,9 @@ export class AgentManager {
 	private permissionCallback: PermissionCallback | null = null;
 	private skillsCallback: SkillsCallback | null = null;
 	private sessionIdCallback: SessionIdCallback | null = null;
+	private modelsCallback: ModelsCallback | null = null;
+	private currentModel: string | null = null;
+	private availableModels: ModelInfo[] = [];
 	private abortController: AbortController | null = null;
 	private messageQueue: SDKUserMessage[] = [];
 	private messageResolve: (() => void) | null = null;
@@ -49,9 +53,11 @@ export class AgentManager {
 	onPermission(cb: PermissionCallback): void { this.permissionCallback = cb; }
 	onSkills(cb: SkillsCallback): void { this.skillsCallback = cb; }
 	onSessionId(cb: SessionIdCallback): void { this.sessionIdCallback = cb; }
+	onModels(cb: ModelsCallback): void { this.modelsCallback = cb; }
 
 	getSessionId(): string | null { return this.sessionId; }
 	getUsageStats(): SessionUsageStats { return this.usageStats; }
+	getCurrentModel(): string | null { return this.currentModel; }
 
 	// Create an async iterable that yields user messages as they arrive
 	private createMessageStream(): AsyncIterable<SDKUserMessage> {
@@ -72,7 +78,7 @@ export class AgentManager {
 		};
 	}
 
-	async start(cwd: string, claudePath?: string, resumeSessionId?: string, configDir?: string): Promise<void> {
+	async start(cwd: string, claudePath?: string, resumeSessionId?: string, configDir?: string, model?: string): Promise<void> {
 		this.abortController = new AbortController();
 		this.running = true;
 
@@ -92,6 +98,7 @@ export class AgentManager {
 			permissionMode: "default" as const,
 			// Load project and user settings to get project-specific skills/plugins
 			settingSources: ["user", "project", "local"] as const,
+			...(model ? { model } : {}),
 			...(resumeSessionId ? { resume: resumeSessionId } : {}),
 			canUseTool: async (
 				toolName: string,
@@ -111,8 +118,9 @@ export class AgentManager {
 				options: options as Parameters<typeof query>[0]["options"],
 			});
 
-			// Fetch available skills after initialization
+			// Fetch available skills and models after initialization
 			this.loadSkills();
+			this.loadModels();
 
 			for await (const message of this.queryInstance) {
 				// Capture session_id from the first message that has one
@@ -120,6 +128,15 @@ export class AgentManager {
 					const id: string = (message as any).session_id;
 					this.sessionId = id;
 					this.sessionIdCallback?.(id);
+				}
+
+				// Capture active model from the init message; re-notify so the
+				// UI selector reflects the actual model once known
+				if (message.type === "system" && "subtype" in message && message.subtype === "init" && "model" in message) {
+					this.currentModel = (message as { model: string }).model;
+					if (this.availableModels.length > 0) {
+						this.modelsCallback?.(this.availableModels, this.currentModel);
+					}
 				}
 
 				if (message.type === "result" && !message.is_error) {
@@ -188,6 +205,23 @@ export class AgentManager {
 		} catch (err) {
 			console.error("Failed to load skills:", err);
 		}
+	}
+
+	private async loadModels(): Promise<void> {
+		if (!this.queryInstance || !this.modelsCallback) return;
+
+		try {
+			this.availableModels = await this.queryInstance.supportedModels();
+			this.modelsCallback(this.availableModels, this.currentModel);
+		} catch (err) {
+			console.error("Failed to load models:", err);
+		}
+	}
+
+	async setModel(model: string): Promise<void> {
+		if (!this.queryInstance) throw new Error("Agent not running");
+		await this.queryInstance.setModel(model);
+		this.currentModel = model;
 	}
 
 	requestUsage(callback: (text: string) => void): void {

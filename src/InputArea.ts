@@ -1,11 +1,13 @@
 import { App, TFile, setIcon } from "obsidian";
 import { BUILTIN_COMMANDS, type SlashCommandDef } from "./constants";
 import { FileSearchProvider } from "./FileSearchProvider";
+import type { ModelInfo } from "./claude/types";
 
 export interface InputAreaCallbacks {
 	onSubmit: (text: string) => void;
 	onStop: () => void;
 	onSettings?: () => void;
+	onModelChange?: (model: string) => void;
 }
 
 export class InputArea {
@@ -14,6 +16,7 @@ export class InputArea {
 	private stopButton: HTMLButtonElement;
 	private autocompleteEl: HTMLElement;
 	private contextBarEl: HTMLElement;
+	private modelSelectEl: HTMLSelectElement;
 	private selectedCommandIndex = -1;
 	private allCommands: SlashCommandDef[] = [];
 	private fileSearch: FileSearchProvider;
@@ -30,6 +33,16 @@ export class InputArea {
 		});
 
 		const buttonsRow = inputWrapper.createDiv({ cls: "clawbar-input-buttons" });
+
+		this.modelSelectEl = buttonsRow.createEl("select", {
+			cls: "clawbar-model-select",
+			attr: { "aria-label": "Model" },
+		});
+		this.modelSelectEl.style.display = "none";
+		this.modelSelectEl.addEventListener("change", () => {
+			const value = this.modelSelectEl.value;
+			if (value) this.callbacks.onModelChange?.(value);
+		});
 
 		const settingsButton = buttonsRow.createEl("button", {
 			cls: "clawbar-settings-btn",
@@ -80,6 +93,36 @@ export class InputArea {
 
 	setCommands(commands: SlashCommandDef[]) {
 		this.allCommands = commands;
+	}
+
+	setModels(models: ModelInfo[], currentModel: string | null) {
+		this.modelSelectEl.empty();
+
+		if (models.length === 0) {
+			this.modelSelectEl.style.display = "none";
+			return;
+		}
+
+		for (const model of models) {
+			const option = this.modelSelectEl.createEl("option", {
+				text: model.displayName,
+				attr: { value: model.value, title: model.description },
+			});
+			if (currentModel && (model.value === currentModel || currentModel.includes(model.value))) {
+				option.selected = true;
+			}
+		}
+
+		// Current model not in the list (e.g. full model ID from init) — show it as-is
+		if (currentModel && !this.modelSelectEl.value) {
+			const option = this.modelSelectEl.createEl("option", {
+				text: currentModel,
+				attr: { value: currentModel },
+			});
+			option.selected = true;
+		}
+
+		this.modelSelectEl.style.display = "block";
 	}
 
 	setThinking(thinking: boolean) {

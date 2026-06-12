@@ -16,6 +16,7 @@ export interface ClawbarSettings {
 	maxSavedChats: number;
 	accounts: ClaudeAccount[];
 	activeAccountId: string | null;
+	selectedModel: string | null;
 }
 
 export const DEFAULT_SETTINGS: ClawbarSettings = {
@@ -26,6 +27,7 @@ export const DEFAULT_SETTINGS: ClawbarSettings = {
 	maxSavedChats: 50,
 	accounts: [],
 	activeAccountId: null,
+	selectedModel: null,
 };
 
 export class ClawbarSettingTab extends PluginSettingTab {

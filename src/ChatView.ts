@@ -1,7 +1,7 @@
 import { ItemView, MarkdownRenderer, Notice, WorkspaceLeaf, TFile } from "obsidian";
 import { homedir } from "os";
 import { AgentManager } from "./claude/AgentManager";
-import type { SDKMessage, PermissionResult, ContentBlock, SlashCommand, Message, SessionMeta } from "./claude/types";
+import type { SDKMessage, PermissionResult, ContentBlock, SlashCommand, Message, SessionMeta, ModelInfo } from "./claude/types";
 import type ClawbarPlugin from "./main";
 import { BUILTIN_COMMANDS } from "./constants";
 import { UsageModal } from "./UsageModal";
@@ -61,6 +61,7 @@ export class ChatView extends ItemView {
 			onSubmit: (text) => this.handleSubmit(text),
 			onStop: () => this.handleStop(),
 			onSettings: () => this.openSettingsModal(),
+			onModelChange: (model) => this.handleModelChange(model),
 		});
 
 		// Register active file listener
@@ -128,6 +129,9 @@ export class ChatView extends ItemView {
 			this.currentSessionId = id;
 			this.renderSessionBar();
 		});
+		this.agent.onModels((models: ModelInfo[], currentModel: string | null) => {
+			this.inputComponent.setModels(models, currentModel);
+		});
 
 		// Ensure buttons are in initial state
 		this.hideThinking();
@@ -151,7 +155,24 @@ export class ChatView extends ItemView {
 			(a) => a.id === this.plugin.settings.activeAccountId
 		);
 		const configDir = activeAccount?.configDir?.replace(/^~/, homedir());
-		this.agent.start(vaultPath, this.plugin.settings.claudePath, resumeSessionId, configDir);
+		this.agent.start(
+			vaultPath,
+			this.plugin.settings.claudePath,
+			resumeSessionId,
+			configDir,
+			this.plugin.settings.selectedModel ?? undefined,
+		);
+	}
+
+	private async handleModelChange(model: string) {
+		try {
+			await this.agent.setModel(model);
+			this.plugin.settings.selectedModel = model;
+			await this.plugin.saveSettings();
+			new Notice(`Model switched to ${model}`);
+		} catch (err) {
+			new Notice(`Could not switch model: ${err instanceof Error ? err.message : err}`);
+		}
 	}
 
 	private handleSDKMessage(msg: SDKMessage) {
@@ -449,6 +470,16 @@ export class ChatView extends ItemView {
 	private async renderMessages() {
 		this.messagesContainer.empty();
 
+		if (this.messages.length === 0) {
+			if (this.thinkingEl) {
+				// A request is in flight (e.g. cleared mid-response) — keep the indicator
+				this.messagesContainer.appendChild(this.thinkingEl);
+			} else {
+				this.renderEmptyState();
+			}
+			return;
+		}
+
 		for (const msg of this.messages) {
 			if (msg.role === "tool") {
 				this.renderToolMessage(msg);
@@ -458,9 +489,6 @@ export class ChatView extends ItemView {
 				const msgEl = this.messagesContainer.createDiv({
 					cls: `clawbar-message clawbar-message-${msg.role}`,
 				});
-
-				const roleLabel = msgEl.createDiv({ cls: "clawbar-message-role" });
-				roleLabel.setText(msg.role === "user" ? "You" : "Claude");
 
 				const contentEl = msgEl.createDiv({ cls: "clawbar-message-content" });
 
@@ -475,6 +503,17 @@ export class ChatView extends ItemView {
 		if (this.thinkingEl) {
 			this.messagesContainer.appendChild(this.thinkingEl);
 		}
+	}
+
+	private renderEmptyState() {
+		const emptyEl = this.messagesContainer.createDiv({ cls: "clawbar-empty-state" });
+		const iconEl = emptyEl.createDiv({ cls: "clawbar-empty-icon" });
+		iconEl.setText("✳");
+		emptyEl.createDiv({ cls: "clawbar-empty-title", text: "Claude Code" });
+		emptyEl.createDiv({
+			cls: "clawbar-empty-hint",
+			text: "Ask anything about your vault. Use / for commands, @ to reference files.",
+		});
 	}
 
 	// --- Tool Permission Prompts ---
@@ -617,12 +656,51 @@ export class ChatView extends ItemView {
 
 	// --- Tool Message Rendering ---
 
+	// One-line human-readable summary of a tool call for the collapsed header
+	private getToolSummary(toolName: string | undefined, input: Record<string, unknown> | undefined): string {
+		if (!input) return "";
+		const str = (key: string): string => typeof input[key] === "string" ? (input[key] as string) : "";
+		switch (toolName) {
+			case "Read":
+			case "Write":
+			case "Edit":
+			case "NotebookEdit":
+				return str("file_path") || str("notebook_path");
+			case "Bash":
+				return str("description") || str("command");
+			case "Grep":
+				return str("pattern");
+			case "Glob":
+				return str("pattern");
+			case "WebFetch":
+			case "WebSearch":
+				return str("url") || str("query");
+			case "Task":
+				return str("description");
+			case "TodoWrite":
+				return "Update task list";
+			default: {
+				// Fall back to the first string value in the input
+				const first = Object.values(input).find((v) => typeof v === "string");
+				return typeof first === "string" ? first : "";
+			}
+		}
+	}
+
 	private renderToolMessage(msg: Message) {
 		const toolEl = this.messagesContainer.createDiv({ cls: "clawbar-message clawbar-message-tool" });
 
 		const header = toolEl.createDiv({ cls: "clawbar-tool-header" });
 		const toggle = header.createSpan({ cls: "clawbar-tool-toggle", text: "▶" });
 		header.createSpan({ cls: "clawbar-tool-name", text: msg.toolName || "Tool" });
+
+		const summary = this.getToolSummary(msg.toolName, msg.blocks[0]?.input);
+		if (summary) {
+			header.createSpan({
+				cls: "clawbar-tool-summary",
+				text: summary.length > 80 ? summary.slice(0, 80) + "…" : summary,
+			});
+		}
 
 		// Show status indicator
 		if (msg.toolResult !== undefined) {
