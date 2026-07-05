@@ -7,6 +7,7 @@ import { BUILTIN_COMMANDS } from "./constants";
 import { UsageModal } from "./UsageModal";
 import { McpSettingsModal } from "./McpSettingsModal";
 import { InputArea } from "./InputArea";
+import { hasDiffView, renderDiffView } from "./DiffView";
 
 export const VIEW_TYPE_CHAT = "clawbar-chat-view";
 
@@ -539,8 +540,16 @@ export class ChatView extends ItemView {
 			header.createSpan({ text: `Claude wants to use: ${toolName}` });
 
 			const details = promptEl.createDiv({ cls: "clawbar-permission-details" });
-			const inputPre = details.createEl("pre", { cls: "clawbar-tool-code" });
-			inputPre.createEl("code", { text: JSON.stringify(toolInput, null, 2) });
+			const input = toolInput as Record<string, unknown>;
+			if (hasDiffView(toolName, input)) {
+				if (typeof input.file_path === "string") {
+					details.createDiv({ cls: "clawbar-diff-file", text: input.file_path });
+				}
+				renderDiffView(details, toolName, input);
+			} else {
+				const inputPre = details.createEl("pre", { cls: "clawbar-tool-code" });
+				inputPre.createEl("code", { text: JSON.stringify(toolInput, null, 2) });
+			}
 
 			const actions = promptEl.createDiv({ cls: "clawbar-permission-actions" });
 
@@ -714,11 +723,19 @@ export class ChatView extends ItemView {
 		// Render tool input
 		const toolBlock = msg.blocks[0];
 		if (toolBlock?.input) {
-			content.createDiv({ cls: "clawbar-tool-section-label", text: "Input" });
-			const inputCode = content.createEl("pre", { cls: "clawbar-tool-code" });
-			inputCode.createEl("code", {
-				text: JSON.stringify(toolBlock.input, null, 2)
-			});
+			if (hasDiffView(msg.toolName, toolBlock.input)) {
+				content.createDiv({
+					cls: "clawbar-tool-section-label",
+					text: msg.toolName === "Write" ? "New content" : "Changes",
+				});
+				renderDiffView(content, msg.toolName, toolBlock.input);
+			} else {
+				content.createDiv({ cls: "clawbar-tool-section-label", text: "Input" });
+				const inputCode = content.createEl("pre", { cls: "clawbar-tool-code" });
+				inputCode.createEl("code", {
+					text: JSON.stringify(toolBlock.input, null, 2)
+				});
+			}
 		}
 
 		// Render tool result if available

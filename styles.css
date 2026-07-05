@@ -382,6 +382,73 @@ button.clawbar-submit {
 	word-break: break-word;
 }
 
+/* --- Diff view for Edit/Write tool inputs --- */
+
+.clawbar-diff {
+	margin: 4px 0 0 0;
+	background-color: var(--background-secondary);
+	border-radius: 4px;
+	font-family: var(--font-monospace);
+	font-size: 0.8rem;
+	line-height: 1.5;
+	overflow-x: auto;
+	max-height: 300px;
+	overflow-y: auto;
+}
+
+.clawbar-diff-file {
+	font-family: var(--font-monospace);
+	font-size: 0.8rem;
+	color: var(--text-muted);
+	margin-bottom: 4px;
+	word-break: break-all;
+}
+
+.clawbar-diff-line {
+	display: flex;
+	padding: 0 8px;
+	white-space: pre;
+}
+
+.clawbar-diff-gutter {
+	flex: none;
+	width: 1.2em;
+	user-select: none;
+	opacity: 0.8;
+}
+
+.clawbar-diff-text {
+	flex: 1;
+}
+
+.clawbar-diff-add {
+	background-color: rgba(var(--color-green-rgb), 0.14);
+	color: var(--text-normal);
+}
+
+.clawbar-diff-add .clawbar-diff-gutter {
+	color: var(--color-green);
+}
+
+.clawbar-diff-remove {
+	background-color: rgba(var(--color-red-rgb), 0.14);
+	color: var(--text-normal);
+}
+
+.clawbar-diff-remove .clawbar-diff-gutter {
+	color: var(--color-red);
+}
+
+.clawbar-diff-context {
+	color: var(--text-muted);
+}
+
+.clawbar-diff-skip {
+	color: var(--text-faint);
+	justify-content: center;
+	user-select: none;
+}
+
 .clawbar-text-block:first-child p:first-child {
 	margin-top: 0;
 }
