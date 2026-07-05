@@ -34,5 +34,6 @@ Then copy `main.js` and `manifest.json` to `.obsidian/plugins/obsidian-clawbar/`
 - Awareness of current active note
 - Polished permission and question prompts with smooth animations
 - Interactive tool use visualization with collapsible sections
+- Inline before/after diffs for file edits, in tool blocks and permission prompts
 - Markdown rendering for assistant responses
 - Conversation persistence across sessions
