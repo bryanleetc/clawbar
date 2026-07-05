@@ -1,3 +1,8 @@
+// Files larger than this are referenced by path only instead of inlined into the message
+export const MAX_INLINE_FILE_CHARS = 10_000;
+// Max entries shown in the @file autocomplete
+export const MAX_FILE_SUGGESTIONS = 15;
+
 export interface SlashCommandDef {
 	name: string;
 	description: string;

@@ -4,13 +4,10 @@ import { patchObsidianDom } from "./__mocks__/obsidian-dom";
 // Mock modules that ChatView imports (besides obsidian, which is aliased in vitest.config)
 vi.mock("./claude/AgentManager", () => ({
 	AgentManager: class {
-		onMessage() {}
-		onError() {}
-		onPermission() {}
-		onSkills() {}
-		onSessionId() {}
+		constructor(_events: unknown) {}
 		start() {}
 		stop() {}
+		detach() {}
 		sendMessage() {}
 	},
 }));
@@ -26,6 +23,7 @@ vi.mock("./FileSearchProvider", () => ({
 	FileSearchProvider: class {
 		constructor() {}
 		handleInput() { return false; }
+		handleKeydown() { return false; }
 	},
 }));
 
@@ -33,6 +31,8 @@ vi.mock("./FileSearchProvider", () => ({
 patchObsidianDom();
 
 import { ChatView } from "./ChatView";
+import { MessageRenderer } from "./MessageRenderer";
+import { PromptManager } from "./PromptManager";
 import { WorkspaceLeaf } from "obsidian";
 
 function createChatView(): ChatView {
@@ -41,10 +41,12 @@ function createChatView(): ChatView {
 	return new ChatView(leaf as any, plugin);
 }
 
-function setupDom(view: ChatView) {
-	const container = document.createElement("div");
-	(view as any).messagesContainer = container;
-	(view as any).promptsContainer = document.createElement("div");
+function setupDom(view: ChatView): { messagesContainer: HTMLElement; promptsContainer: HTMLElement } {
+	const messagesContainer = document.createElement("div");
+	const promptsContainer = document.createElement("div");
+	(view as any).messagesContainer = messagesContainer;
+	(view as any).renderer = new MessageRenderer((view as any).app, messagesContainer, view as any);
+	(view as any).prompts = new PromptManager(promptsContainer);
 	(view as any).messages = [];
 	(view as any).thinkingEl = null;
 	(view as any).inputComponent = {
@@ -53,6 +55,7 @@ function setupDom(view: ChatView) {
 		clear() {},
 		destroy() {},
 	};
+	return { messagesContainer, promptsContainer };
 }
 
 describe("ChatView thinking indicator", () => {
@@ -152,150 +155,21 @@ describe("ChatView thinking indicator", () => {
 	});
 });
 
-describe("ChatView permission prompts", () => {
-	let view: ChatView;
+describe("ChatView prompt/message container separation", () => {
+	it("prompts render into their own container and survive message re-renders", async () => {
+		const view = createChatView();
+		const { messagesContainer, promptsContainer } = setupDom(view);
 
-	beforeEach(() => {
-		view = createChatView();
-		setupDom(view);
-	});
-
-	it("showPermissionPrompt renders into promptsContainer, not messagesContainer", async () => {
-		(view as any).showPermissionPrompt("Write", { path: "foo.md", content: "hello" });
+		(view as any).prompts.request("Write", { path: "foo.md" });
 		await Promise.resolve();
 
-		const prompts = (view as any).promptsContainer as HTMLElement;
-		const messages = (view as any).messagesContainer as HTMLElement;
-
-		expect(prompts.querySelector(".clawbar-permission-prompt")).not.toBeNull();
-		expect(messages.querySelector(".clawbar-permission-prompt")).toBeNull();
-	});
-
-	it("permission prompt survives renderMessages()", async () => {
-		(view as any).showPermissionPrompt("Write", { path: "foo.md" });
+		expect(promptsContainer.querySelector(".clawbar-permission-prompt")).not.toBeNull();
+		expect(messagesContainer.querySelector(".clawbar-permission-prompt")).toBeNull();
 
 		(view as any).messages.push({ role: "user", blocks: [{ type: "text", text: "hi" }] });
 		await (view as any).renderMessages();
-
-		const prompts = (view as any).promptsContainer as HTMLElement;
-		expect(prompts.querySelector(".clawbar-permission-prompt")).not.toBeNull();
-	});
-
-	it("permission prompt survives multiple renderMessages() calls", async () => {
-		(view as any).showPermissionPrompt("Bash", { command: "ls" });
-
-		await (view as any).renderMessages();
-		await (view as any).renderMessages();
 		await (view as any).renderMessages();
 
-		const prompts = (view as any).promptsContainer as HTMLElement;
-		expect(prompts.querySelector(".clawbar-permission-prompt")).not.toBeNull();
-	});
-
-	it("Allow button resolves promise with behavior: allow", async () => {
-		const resultPromise = (view as any).showPermissionPrompt("Write", { path: "foo.md" });
-		await Promise.resolve();
-
-		const prompts = (view as any).promptsContainer as HTMLElement;
-		const allowBtn = prompts.querySelector(".clawbar-permission-allow") as HTMLButtonElement;
-		allowBtn.click();
-
-		const result = await resultPromise;
-		expect(result.behavior).toBe("allow");
-		expect(result.updatedInput).toEqual({ path: "foo.md" });
-	});
-
-	it("Deny button resolves promise with behavior: deny", async () => {
-		const resultPromise = (view as any).showPermissionPrompt("Write", { path: "foo.md" });
-		await Promise.resolve();
-
-		const prompts = (view as any).promptsContainer as HTMLElement;
-		const denyBtn = prompts.querySelector(".clawbar-permission-deny") as HTMLButtonElement;
-		denyBtn.click();
-
-		const result = await resultPromise;
-		expect(result.behavior).toBe("deny");
-	});
-
-	it("prompt is removed from DOM after Allow is clicked", async () => {
-		const resultPromise = (view as any).showPermissionPrompt("Write", { path: "foo.md" });
-		await Promise.resolve();
-
-		const prompts = (view as any).promptsContainer as HTMLElement;
-		(prompts.querySelector(".clawbar-permission-allow") as HTMLButtonElement).click();
-		await resultPromise;
-
-		expect(prompts.querySelector(".clawbar-permission-prompt")).toBeNull();
-	});
-
-	it("prompt is removed from DOM after Deny is clicked", async () => {
-		const resultPromise = (view as any).showPermissionPrompt("Write", { path: "foo.md" });
-		await Promise.resolve();
-
-		const prompts = (view as any).promptsContainer as HTMLElement;
-		(prompts.querySelector(".clawbar-permission-deny") as HTMLButtonElement).click();
-		await resultPromise;
-
-		expect(prompts.querySelector(".clawbar-permission-prompt")).toBeNull();
-	});
-
-	it("AskUserQuestion tool name routes to showQuestionPrompt (renders into promptsContainer)", async () => {
-		const input = {
-			questions: [{
-				question: "Pick one",
-				header: "Choice",
-				options: [{ label: "A", description: "Option A" }],
-				multiSelect: false,
-			}],
-		};
-		(view as any).showPermissionPrompt("AskUserQuestion", input);
-		await Promise.resolve();
-
-		const prompts = (view as any).promptsContainer as HTMLElement;
-		expect(prompts.querySelector(".clawbar-question-prompt")).not.toBeNull();
-		expect(prompts.querySelector(".clawbar-permission-prompt")).toBeNull();
-	});
-
-	it("second prompt is not shown until first is answered", async () => {
-		const p1 = (view as any).showPermissionPrompt("Write", { path: "a.md" });
-		const p2 = (view as any).showPermissionPrompt("Bash", { command: "ls" });
-		await Promise.resolve();
-
-		const prompts = (view as any).promptsContainer as HTMLElement;
-		// Only the first prompt should be in the DOM
-		expect(prompts.querySelectorAll(".clawbar-permission-prompt").length).toBe(1);
-		expect(prompts.querySelector(".clawbar-permission-prompt")!.textContent).toContain("Write");
-
-		// Answer first prompt
-		(prompts.querySelector(".clawbar-permission-allow") as HTMLButtonElement).click();
-		await p1;
-		// Let queue advance (two microtask hops: result.then → permissionQueue.then)
-		await Promise.resolve();
-		await Promise.resolve();
-
-		// Now the second prompt should appear
-		expect(prompts.querySelectorAll(".clawbar-permission-prompt").length).toBe(1);
-		expect(prompts.querySelector(".clawbar-permission-prompt")!.textContent).toContain("Bash");
-
-		// Answer second prompt to clean up
-		(prompts.querySelector(".clawbar-permission-allow") as HTMLButtonElement).click();
-		await p2;
-	});
-
-	it("question prompt survives renderMessages()", async () => {
-		const input = {
-			questions: [{
-				question: "Pick one",
-				header: "Choice",
-				options: [{ label: "A", description: "" }],
-				multiSelect: false,
-			}],
-		};
-		(view as any).showPermissionPrompt("AskUserQuestion", input);
-
-		await (view as any).renderMessages();
-
-		const prompts = (view as any).promptsContainer as HTMLElement;
-		expect(prompts.querySelector(".clawbar-question-prompt")).not.toBeNull();
+		expect(promptsContainer.querySelector(".clawbar-permission-prompt")).not.toBeNull();
 	});
 });

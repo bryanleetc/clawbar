@@ -1,6 +1,7 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { Query, SlashCommand, ModelUsage, McpServerStatus, ModelInfo } from "@anthropic-ai/claude-agent-sdk";
 import { dirname } from "path";
+import { assistantBlocks } from "./types";
 import type { SDKMessage, SDKUserMessage, PermissionResult } from "./types";
 
 export interface SessionUsageStats {
@@ -13,20 +14,20 @@ export interface SessionUsageStats {
 	modelUsage: Record<string, ModelUsage>;
 }
 
-export type MessageCallback = (message: SDKMessage) => void;
-export type ErrorCallback = (error: string) => void;
-export type PermissionCallback = (toolName: string, toolInput: unknown) => Promise<PermissionResult>;
-export type SkillsCallback = (skills: SlashCommand[]) => void;
-export type SessionIdCallback = (sessionId: string) => void;
-export type ModelsCallback = (models: ModelInfo[], currentModel: string | null) => void;
+/** Everything the UI needs to hear about from the agent. Detached all at once. */
+export interface AgentEvents {
+	onMessage: (message: SDKMessage) => void;
+	onError: (error: string) => void;
+	onPermission: (toolName: string, toolInput: Record<string, unknown>) => Promise<PermissionResult>;
+	onSkills: (skills: SlashCommand[]) => void;
+	onSessionId: (sessionId: string) => void;
+	onModels: (models: ModelInfo[], currentModel: string | null) => void;
+}
+
+type QueryOptions = Parameters<typeof query>[0]["options"];
 
 export class AgentManager {
-	private messageCallback: MessageCallback | null = null;
-	private errorCallback: ErrorCallback | null = null;
-	private permissionCallback: PermissionCallback | null = null;
-	private skillsCallback: SkillsCallback | null = null;
-	private sessionIdCallback: SessionIdCallback | null = null;
-	private modelsCallback: ModelsCallback | null = null;
+	private events: AgentEvents | null;
 	private currentModel: string | null = null;
 	private availableModels: ModelInfo[] = [];
 	private abortController: AbortController | null = null;
@@ -35,9 +36,8 @@ export class AgentManager {
 	private running = false;
 	private queryInstance: Query | null = null;
 	private sessionId: string | null = null;
-	// When set, the next assistant+result sequence is routed here instead of messageCallback
-	private usageRequestCallback: ((text: string) => void) | null = null;
-	private usageTextBuffer = "";
+	// When set, assistant text is buffered here and the next result resolves the /usage request
+	private usageRequest: { callback: (text: string) => void; buffer: string } | null = null;
 	private usageStats: SessionUsageStats = {
 		requestCount: 0,
 		totalCostUSD: 0,
@@ -48,40 +48,95 @@ export class AgentManager {
 		modelUsage: {},
 	};
 
-	onMessage(cb: MessageCallback): void { this.messageCallback = cb; }
-	onError(cb: ErrorCallback): void { this.errorCallback = cb; }
-	onPermission(cb: PermissionCallback): void { this.permissionCallback = cb; }
-	onSkills(cb: SkillsCallback): void { this.skillsCallback = cb; }
-	onSessionId(cb: SessionIdCallback): void { this.sessionIdCallback = cb; }
-	onModels(cb: ModelsCallback): void { this.modelsCallback = cb; }
+	constructor(events: AgentEvents) {
+		this.events = events;
+	}
 
 	getSessionId(): string | null { return this.sessionId; }
 	getUsageStats(): SessionUsageStats { return this.usageStats; }
 	getCurrentModel(): string | null { return this.currentModel; }
-
-	// Create an async iterable that yields user messages as they arrive
-	private createMessageStream(): AsyncIterable<SDKUserMessage> {
-		const self = this;
-		return {
-			[Symbol.asyncIterator]() {
-				return {
-					async next(): Promise<IteratorResult<SDKUserMessage>> {
-						while (self.messageQueue.length === 0) {
-							await new Promise<void>(resolve => {
-								self.messageResolve = resolve;
-							});
-						}
-						return { value: self.messageQueue.shift()!, done: false };
-					}
-				};
-			}
-		};
-	}
+	isRunning(): boolean { return this.running; }
 
 	async start(cwd: string, claudePath?: string, resumeSessionId?: string, configDir?: string, model?: string): Promise<void> {
 		this.abortController = new AbortController();
 		this.running = true;
 
+		try {
+			this.queryInstance = query({
+				prompt: this.messageStream(),
+				options: this.buildOptions(cwd, claudePath, resumeSessionId, configDir, model),
+			});
+
+			// Fetch available skills and models after initialization
+			this.loadSkills();
+			this.loadModels();
+
+			for await (const message of this.queryInstance) {
+				this.handleMessage(message);
+			}
+		} catch (err: unknown) {
+			const error = err as { name?: string; message?: string };
+			if (error.name !== "AbortError") {
+				this.events?.onError(error.message || "Unknown error");
+			}
+		} finally {
+			this.running = false;
+		}
+	}
+
+	sendMessage(text: string): void {
+		this.messageQueue.push({
+			type: "user",
+			session_id: "",
+			message: {
+				role: "user",
+				content: [{ type: "text", text }],
+			},
+			parent_tool_use_id: null,
+		} as SDKUserMessage);
+		if (this.messageResolve) {
+			this.messageResolve();
+			this.messageResolve = null;
+		}
+	}
+
+	/** Ask the CLI for usage stats; `callback` receives the markdown response. */
+	requestUsage(callback: (text: string) => void): void {
+		this.usageRequest = { callback, buffer: "" };
+		this.sendMessage("/usage");
+	}
+
+	async setModel(model: string): Promise<void> {
+		if (!this.queryInstance) throw new Error("Agent not running");
+		await this.queryInstance.setModel(model);
+		this.currentModel = model;
+	}
+
+	/** Stop delivering events (e.g. before this manager is replaced). */
+	detach(): void {
+		this.events = null;
+		this.usageRequest = null;
+		this.sessionId = null;
+	}
+
+	stop(): void {
+		this.abortController?.abort();
+		this.running = false;
+	}
+
+	async getMcpServerStatus(): Promise<McpServerStatus[]> {
+		if (!this.queryInstance) return [];
+		return this.queryInstance.mcpServerStatus();
+	}
+
+	async toggleMcpServer(name: string, enabled: boolean): Promise<void> {
+		if (!this.queryInstance) return;
+		await this.queryInstance.toggleMcpServer(name, enabled);
+	}
+
+	// --- Internals ---
+
+	private buildOptions(cwd: string, claudePath?: string, resumeSessionId?: string, configDir?: string, model?: string): QueryOptions {
 		const env = (claudePath || configDir)
 			? {
 				...process.env,
@@ -100,177 +155,113 @@ export class AgentManager {
 			settingSources: ["user", "project", "local"] as const,
 			...(model ? { model } : {}),
 			...(resumeSessionId ? { resume: resumeSessionId } : {}),
-			canUseTool: async (
-				toolName: string,
-				input: Record<string, unknown>,
-				opts: { signal: AbortSignal }
-			): Promise<PermissionResult> => {
-				if (this.permissionCallback) {
-					return this.permissionCallback(toolName, input);
+			canUseTool: async (toolName: string, input: Record<string, unknown>): Promise<PermissionResult> => {
+				if (this.events) {
+					return this.events.onPermission(toolName, input);
 				}
 				return { behavior: "allow" as const, updatedInput: input };
 			},
 		};
+		return options as QueryOptions;
+	}
 
-		try {
-			this.queryInstance = query({
-				prompt: this.createMessageStream(),
-				options: options as Parameters<typeof query>[0]["options"],
+	// Async iterable of user messages, fed by sendMessage()
+	private async *messageStream(): AsyncGenerator<SDKUserMessage> {
+		while (true) {
+			while (this.messageQueue.length > 0) {
+				yield this.messageQueue.shift()!;
+			}
+			await new Promise<void>((resolve) => {
+				this.messageResolve = resolve;
 			});
+		}
+	}
 
-			// Fetch available skills and models after initialization
-			this.loadSkills();
-			this.loadModels();
+	private handleMessage(message: SDKMessage) {
+		// Capture session_id from the first message that has one
+		const sessionId = (message as { session_id?: string }).session_id;
+		if (!this.sessionId && sessionId) {
+			this.sessionId = sessionId;
+			this.events?.onSessionId(sessionId);
+		}
 
-			for await (const message of this.queryInstance) {
-				// Capture session_id from the first message that has one
-				if (!this.sessionId && 'session_id' in message && (message as any).session_id) {
-					const id: string = (message as any).session_id;
-					this.sessionId = id;
-					this.sessionIdCallback?.(id);
-				}
-
-				// Capture active model from the init message; re-notify so the
-				// UI selector reflects the actual model once known
-				if (message.type === "system" && "subtype" in message && message.subtype === "init" && "model" in message) {
-					this.currentModel = (message as { model: string }).model;
-					if (this.availableModels.length > 0) {
-						this.modelsCallback?.(this.availableModels, this.currentModel);
-					}
-				}
-
-				if (message.type === "result" && !message.is_error) {
-					// usage fields follow BetaUsage (snake_case from Anthropic API)
-					const result = message as unknown as { total_cost_usd: number; usage: Record<string, number>; modelUsage: Record<string, ModelUsage> };
-					this.usageStats.requestCount++;
-					this.usageStats.totalCostUSD += result.total_cost_usd ?? 0;
-					this.usageStats.totalInputTokens += result.usage?.input_tokens ?? 0;
-					this.usageStats.totalOutputTokens += result.usage?.output_tokens ?? 0;
-					this.usageStats.totalCacheReadTokens += result.usage?.cache_read_input_tokens ?? 0;
-					this.usageStats.totalCacheCreationTokens += result.usage?.cache_creation_input_tokens ?? 0;
-					for (const [model, usage] of Object.entries(result.modelUsage ?? {})) {
-						const existing = this.usageStats.modelUsage[model];
-						if (existing) {
-							existing.inputTokens += usage.inputTokens;
-							existing.outputTokens += usage.outputTokens;
-							existing.cacheReadInputTokens += usage.cacheReadInputTokens;
-							existing.cacheCreationInputTokens += usage.cacheCreationInputTokens;
-							existing.webSearchRequests += usage.webSearchRequests;
-							existing.costUSD += usage.costUSD;
-						} else {
-							this.usageStats.modelUsage[model] = { ...usage };
-						}
-					}
-
-					// Resolve pending usage request
-					if (this.usageRequestCallback) {
-						this.usageRequestCallback(this.usageTextBuffer);
-						this.usageRequestCallback = null;
-						this.usageTextBuffer = "";
-						continue;
-					}
-				}
-
-				// If a usage request is in flight, capture assistant text and suppress normal routing
-				if (this.usageRequestCallback) {
-					if (message.type === "assistant" && "message" in message) {
-						const blocks = (message as { message: { content: Array<{ type: string; text?: string }> } }).message.content;
-						for (const block of blocks) {
-							if (block.type === "text" && block.text) {
-								this.usageTextBuffer += block.text;
-							}
-						}
-					}
-					continue;
-				}
-
-				this.messageCallback?.(message);
+		// Capture active model from the init message; re-notify so the
+		// UI selector reflects the actual model once known
+		if (message.type === "system" && "subtype" in message && message.subtype === "init" && "model" in message) {
+			this.currentModel = (message as { model: string }).model;
+			if (this.availableModels.length > 0) {
+				this.events?.onModels(this.availableModels, this.currentModel);
 			}
-		} catch (err: unknown) {
-			const error = err as { name?: string; message?: string };
-			if (error.name !== "AbortError") {
-				this.errorCallback?.(error.message || "Unknown error");
+		}
+
+		if (message.type === "result" && !message.is_error) {
+			this.accumulateUsage(message);
+			if (this.usageRequest) {
+				this.usageRequest.callback(this.usageRequest.buffer);
+				this.usageRequest = null;
+				return;
 			}
-		} finally {
-			this.running = false;
+		}
+
+		// A /usage request is in flight — buffer assistant text instead of routing to the UI
+		if (this.usageRequest) {
+			for (const block of assistantBlocks(message) ?? []) {
+				if (block.type === "text" && block.text) {
+					this.usageRequest.buffer += block.text;
+				}
+			}
+			return;
+		}
+
+		this.events?.onMessage(message);
+	}
+
+	private accumulateUsage(message: SDKMessage) {
+		// usage fields follow BetaUsage (snake_case from Anthropic API)
+		const result = message as unknown as {
+			total_cost_usd: number;
+			usage: Record<string, number>;
+			modelUsage: Record<string, ModelUsage>;
+		};
+		this.usageStats.requestCount++;
+		this.usageStats.totalCostUSD += result.total_cost_usd ?? 0;
+		this.usageStats.totalInputTokens += result.usage?.input_tokens ?? 0;
+		this.usageStats.totalOutputTokens += result.usage?.output_tokens ?? 0;
+		this.usageStats.totalCacheReadTokens += result.usage?.cache_read_input_tokens ?? 0;
+		this.usageStats.totalCacheCreationTokens += result.usage?.cache_creation_input_tokens ?? 0;
+
+		for (const [model, usage] of Object.entries(result.modelUsage ?? {})) {
+			const existing = this.usageStats.modelUsage[model];
+			if (existing) {
+				existing.inputTokens += usage.inputTokens;
+				existing.outputTokens += usage.outputTokens;
+				existing.cacheReadInputTokens += usage.cacheReadInputTokens;
+				existing.cacheCreationInputTokens += usage.cacheCreationInputTokens;
+				existing.webSearchRequests += usage.webSearchRequests;
+				existing.costUSD += usage.costUSD;
+			} else {
+				this.usageStats.modelUsage[model] = { ...usage };
+			}
 		}
 	}
 
 	private async loadSkills(): Promise<void> {
-		if (!this.queryInstance || !this.skillsCallback) return;
-
+		if (!this.queryInstance) return;
 		try {
 			const skills = await this.queryInstance.supportedCommands();
-			this.skillsCallback(skills);
+			this.events?.onSkills(skills);
 		} catch (err) {
 			console.error("Failed to load skills:", err);
 		}
 	}
 
 	private async loadModels(): Promise<void> {
-		if (!this.queryInstance || !this.modelsCallback) return;
-
+		if (!this.queryInstance) return;
 		try {
 			this.availableModels = await this.queryInstance.supportedModels();
-			this.modelsCallback(this.availableModels, this.currentModel);
+			this.events?.onModels(this.availableModels, this.currentModel);
 		} catch (err) {
 			console.error("Failed to load models:", err);
 		}
-	}
-
-	async setModel(model: string): Promise<void> {
-		if (!this.queryInstance) throw new Error("Agent not running");
-		await this.queryInstance.setModel(model);
-		this.currentModel = model;
-	}
-
-	requestUsage(callback: (text: string) => void): void {
-		this.usageRequestCallback = callback;
-		this.usageTextBuffer = "";
-		this.sendMessage("/usage");
-	}
-
-	sendMessage(text: string): void {
-		const msg: SDKUserMessage = {
-			type: "user",
-			session_id: "",
-			message: {
-				role: "user",
-				content: [{ type: "text", text }],
-			},
-			parent_tool_use_id: null,
-		} as SDKUserMessage;
-		this.messageQueue.push(msg);
-		if (this.messageResolve) {
-			this.messageResolve();
-			this.messageResolve = null;
-		}
-	}
-
-	detach(): void {
-		this.messageCallback = null;
-		this.errorCallback = null;
-		this.permissionCallback = null;
-		this.skillsCallback = null;
-		this.sessionIdCallback = null;
-		this.usageRequestCallback = null;
-		this.sessionId = null;
-	}
-
-	stop(): void {
-		this.abortController?.abort();
-		this.running = false;
-	}
-
-	isRunning(): boolean { return this.running; }
-
-	async getMcpServerStatus(): Promise<McpServerStatus[]> {
-		if (!this.queryInstance) return [];
-		return this.queryInstance.mcpServerStatus();
-	}
-
-	async toggleMcpServer(name: string, enabled: boolean): Promise<void> {
-		if (!this.queryInstance) return;
-		await this.queryInstance.toggleMcpServer(name, enabled);
 	}
 }

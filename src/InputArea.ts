@@ -1,5 +1,6 @@
 import { App, TFile, setIcon } from "obsidian";
 import { BUILTIN_COMMANDS, type SlashCommandDef } from "./constants";
+import { AutocompleteDropdown } from "./AutocompleteDropdown";
 import { FileSearchProvider } from "./FileSearchProvider";
 import type { ModelInfo } from "./claude/types";
 
@@ -14,10 +15,9 @@ export class InputArea {
 	private inputEl: HTMLTextAreaElement;
 	private submitButton: HTMLButtonElement;
 	private stopButton: HTMLButtonElement;
-	private autocompleteEl: HTMLElement;
 	private contextBarEl: HTMLElement;
 	private modelSelectEl: HTMLSelectElement;
-	private selectedCommandIndex = -1;
+	private commandDropdown: AutocompleteDropdown<SlashCommandDef>;
 	private allCommands: SlashCommandDef[] = [];
 	private fileSearch: FileSearchProvider;
 	private callbacks: InputAreaCallbacks;
@@ -63,21 +63,24 @@ export class InputArea {
 		});
 		setIcon(this.submitButton, "arrow-up");
 
-		this.autocompleteEl = inputWrapper.createDiv({ cls: "clawbar-autocomplete" });
-		this.autocompleteEl.style.display = "none";
+		this.commandDropdown = new AutocompleteDropdown<SlashCommandDef>(inputWrapper, {
+			renderItem: (cmd, el) => {
+				el.setAttribute("title", cmd.description);
+				const nameText = cmd.argumentHint ? `/${cmd.name} ${cmd.argumentHint}` : `/${cmd.name}`;
+				el.createSpan({ cls: "clawbar-autocomplete-name", text: nameText });
+				el.createSpan({ cls: "clawbar-autocomplete-desc", text: cmd.description });
+			},
+			onSelect: (cmd) => this.insertCommand(cmd),
+		});
 
 		this.fileSearch = new FileSearchProvider(app, inputWrapper, this.inputEl);
 
 		this.contextBarEl = container.createDiv({ cls: "clawbar-context-bar" });
 
-		// Event handlers
 		this.inputEl.addEventListener("keydown", (e) => this.handleKeydown(e));
-		this.submitButton.addEventListener("click", () => {
-			const text = this.getValue();
-			if (text) this.callbacks.onSubmit(text);
-		});
-		this.stopButton.addEventListener("click", () => this.callbacks.onStop());
 		this.inputEl.addEventListener("input", () => this.handleInput());
+		this.submitButton.addEventListener("click", () => this.submit());
+		this.stopButton.addEventListener("click", () => this.callbacks.onStop());
 	}
 
 	// --- Public API ---
@@ -126,69 +129,40 @@ export class InputArea {
 	}
 
 	setThinking(thinking: boolean) {
-		if (thinking) {
-			this.submitButton.style.display = "none";
-			this.stopButton.style.display = "block";
-		} else {
-			this.submitButton.style.display = "block";
-			this.stopButton.style.display = "none";
-		}
+		this.submitButton.style.display = thinking ? "none" : "block";
+		this.stopButton.style.display = thinking ? "block" : "none";
 	}
 
 	updateContextBar(file: TFile | null) {
 		this.contextBarEl.empty();
 		if (file) {
-			this.contextBarEl.createSpan({
-				cls: "clawbar-context-file",
-				text: file.name,
-			});
+			this.contextBarEl.createSpan({ cls: "clawbar-context-file", text: file.name });
 		}
 	}
 
-	async resolveFileReferences(text: string) {
+	resolveFileReferences(text: string): Promise<string> {
 		return this.fileSearch.resolveReferences(text);
 	}
 
 	destroy() {
 		this.fileSearch.destroy();
+		this.commandDropdown.destroy();
 	}
 
-	// --- Private: Event Handlers ---
+	// --- Private ---
+
+	private submit() {
+		const text = this.getValue();
+		if (text) this.callbacks.onSubmit(text);
+	}
 
 	private handleKeydown(e: KeyboardEvent) {
 		if (this.fileSearch.handleKeydown(e)) return;
-
-		if (this.autocompleteEl.style.display !== "none") {
-			if (e.key === "ArrowDown") {
-				e.preventDefault();
-				this.navigateAutocomplete(1);
-				return;
-			}
-			if (e.key === "ArrowUp") {
-				e.preventDefault();
-				this.navigateAutocomplete(-1);
-				return;
-			}
-			if (e.key === "Tab") {
-				e.preventDefault();
-				this.selectCommand();
-				return;
-			}
-			if (e.key === "Escape") {
-				e.preventDefault();
-				this.hideAutocomplete();
-				return;
-			}
-		}
+		if (this.commandDropdown.handleKeydown(e)) return;
 
 		if (e.key === "Enter" && !e.shiftKey) {
 			e.preventDefault();
-			if (this.autocompleteEl.style.display !== "none") {
-				this.selectCommand();
-			} else {
-				const text = this.getValue();
-				if (text) this.callbacks.onSubmit(text);
-			}
+			this.submit();
 		}
 	}
 
@@ -197,142 +171,54 @@ export class InputArea {
 		this.inputEl.style.height = Math.min(this.inputEl.scrollHeight, 150) + "px";
 
 		if (!this.fileSearch.handleInput()) {
-			this.handleAutocomplete();
+			this.updateCommandAutocomplete();
 		}
 	}
 
-	// --- Private: Slash Command Autocomplete ---
-
-	private handleAutocomplete() {
-		const text = this.inputEl.value;
-		const cursorPos = this.inputEl.selectionStart;
-		const textBeforeCursor = text.substring(0, cursorPos);
-		const lastSlashIndex = textBeforeCursor.lastIndexOf('/');
-
-		if (lastSlashIndex === -1) {
-			this.hideAutocomplete();
+	private updateCommandAutocomplete() {
+		const prefix = this.currentSlashQuery();
+		if (prefix === null) {
+			this.commandDropdown.hide();
 			return;
 		}
 
+		const matches = (cmds: SlashCommandDef[]) => cmds.filter((c) => c.name.startsWith(prefix));
+		const skills = this.allCommands.filter(
+			(c) => !BUILTIN_COMMANDS.some((builtin) => builtin.name === c.name)
+		);
+
+		this.commandDropdown.show([
+			{ label: "Commands", items: matches(BUILTIN_COMMANDS) },
+			{ label: "Skills", items: matches(skills) },
+		]);
+	}
+
+	/** The partial command being typed after '/' at the cursor, or null if not in a slash context. */
+	private currentSlashQuery(): string | null {
+		const cursorPos = this.inputEl.selectionStart;
+		const textBeforeCursor = this.inputEl.value.substring(0, cursorPos);
+
+		const lastSlashIndex = textBeforeCursor.lastIndexOf("/");
+		if (lastSlashIndex === -1) return null;
+
+		// Only complete when the slash starts a line
 		const beforeSlash = textBeforeCursor.substring(0, lastSlashIndex);
-		if (beforeSlash.trim() !== '' && !beforeSlash.endsWith('\n')) {
-			this.hideAutocomplete();
-			return;
-		}
+		if (beforeSlash.trim() !== "" && !beforeSlash.endsWith("\n")) return null;
 
-		const partialCommand = textBeforeCursor.substring(lastSlashIndex + 1);
-
-		const filteredBuiltins = BUILTIN_COMMANDS.filter(cmd =>
-			cmd.name.startsWith(partialCommand.toLowerCase())
-		);
-
-		const sdkSkills = this.allCommands.filter(cmd =>
-			!BUILTIN_COMMANDS.some(builtin => builtin.name === cmd.name)
-		);
-		const filteredSkills = sdkSkills.filter(cmd =>
-			cmd.name.startsWith(partialCommand.toLowerCase())
-		);
-
-		if (filteredBuiltins.length === 0 && filteredSkills.length === 0) {
-			this.hideAutocomplete();
-			return;
-		}
-
-		this.showAutocomplete(filteredBuiltins, filteredSkills);
+		return textBeforeCursor.substring(lastSlashIndex + 1).toLowerCase();
 	}
 
-	private showAutocomplete(builtinCommands: SlashCommandDef[], skills: SlashCommandDef[]) {
-		this.autocompleteEl.empty();
-		this.selectedCommandIndex = 0;
-
-		let itemIndex = 0;
-
-		if (builtinCommands.length > 0) {
-			this.autocompleteEl.createDiv({
-				cls: "clawbar-autocomplete-section",
-				text: "Commands"
-			});
-
-			builtinCommands.forEach((cmd) => {
-				this.renderAutocompleteItem(cmd, itemIndex === 0);
-				itemIndex++;
-			});
-		}
-
-		if (skills.length > 0) {
-			this.autocompleteEl.createDiv({
-				cls: "clawbar-autocomplete-section",
-				text: "Skills"
-			});
-
-			skills.forEach((cmd) => {
-				this.renderAutocompleteItem(cmd, itemIndex === 0 && builtinCommands.length === 0);
-				itemIndex++;
-			});
-		}
-
-		this.autocompleteEl.style.display = "block";
-	}
-
-	private renderAutocompleteItem(cmd: SlashCommandDef, isSelected: boolean) {
-		const itemIndex = this.autocompleteEl.querySelectorAll(".clawbar-autocomplete-item").length;
-
-		const item = this.autocompleteEl.createDiv({
-			cls: isSelected ? "clawbar-autocomplete-item clawbar-autocomplete-selected" : "clawbar-autocomplete-item"
-		});
-
-		item.setAttribute("title", cmd.description);
-
-		const nameText = cmd.argumentHint
-			? `/${cmd.name} ${cmd.argumentHint}`
-			: `/${cmd.name}`;
-
-		item.createSpan({ cls: "clawbar-autocomplete-name", text: nameText });
-		item.createSpan({ cls: "clawbar-autocomplete-desc", text: cmd.description });
-
-		item.addEventListener("click", () => {
-			this.selectedCommandIndex = itemIndex;
-			this.selectCommand();
-		});
-	}
-
-	private hideAutocomplete() {
-		this.autocompleteEl.style.display = "none";
-		this.selectedCommandIndex = -1;
-	}
-
-	private navigateAutocomplete(direction: number) {
-		const items = this.autocompleteEl.querySelectorAll(".clawbar-autocomplete-item");
-		if (items.length === 0) return;
-
-		items[this.selectedCommandIndex]?.removeClass("clawbar-autocomplete-selected");
-		this.selectedCommandIndex = (this.selectedCommandIndex + direction + items.length) % items.length;
-		items[this.selectedCommandIndex]?.addClass("clawbar-autocomplete-selected");
-		items[this.selectedCommandIndex]?.scrollIntoView({ block: "nearest" });
-	}
-
-	private selectCommand() {
-		if (this.selectedCommandIndex === -1) return;
-
-		const items = this.autocompleteEl.querySelectorAll(".clawbar-autocomplete-item");
-		const selectedItem = items[this.selectedCommandIndex];
-		if (!selectedItem) return;
-
-		const commandName = selectedItem.querySelector(".clawbar-autocomplete-name")?.textContent;
-		if (!commandName) return;
-
+	private insertCommand(cmd: SlashCommandDef) {
 		const text = this.inputEl.value;
 		const cursorPos = this.inputEl.selectionStart;
-		const textBeforeCursor = text.substring(0, cursorPos);
-		const lastSlashIndex = textBeforeCursor.lastIndexOf('/');
+		const lastSlashIndex = text.substring(0, cursorPos).lastIndexOf("/");
+		if (lastSlashIndex === -1) return;
 
-		const newText = text.substring(0, lastSlashIndex) + commandName + " " + text.substring(cursorPos);
-		this.inputEl.value = newText;
+		const inserted = `/${cmd.name} `;
+		this.inputEl.value = text.substring(0, lastSlashIndex) + inserted + text.substring(cursorPos);
 
-		const newCursorPos = lastSlashIndex + commandName.length + 1;
+		const newCursorPos = lastSlashIndex + inserted.length;
 		this.inputEl.setSelectionRange(newCursorPos, newCursorPos);
-
-		this.hideAutocomplete();
 		this.inputEl.focus();
 	}
 }
