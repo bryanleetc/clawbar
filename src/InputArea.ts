@@ -22,6 +22,13 @@ export class InputArea {
 	private fileSearch: FileSearchProvider;
 	private callbacks: InputAreaCallbacks;
 
+	/** Submitted messages, oldest first. */
+	private history: string[] = [];
+	/** Cursor into history; equals history.length when composing a fresh message. */
+	private historyIndex = 0;
+	/** In-progress text stashed when navigating away into history. */
+	private draft = "";
+
 	constructor(container: HTMLElement, app: App, callbacks: InputAreaCallbacks) {
 		this.callbacks = callbacks;
 
@@ -92,6 +99,8 @@ export class InputArea {
 	clear() {
 		this.inputEl.value = "";
 		this.inputEl.style.height = "auto";
+		this.historyIndex = this.history.length;
+		this.draft = "";
 	}
 
 	setCommands(commands: SlashCommandDef[]) {
@@ -153,12 +162,33 @@ export class InputArea {
 
 	private submit() {
 		const text = this.getValue();
-		if (text) this.callbacks.onSubmit(text);
+		if (text) {
+			this.recordHistory(text);
+			this.callbacks.onSubmit(text);
+		}
+	}
+
+	private recordHistory(text: string) {
+		// Skip consecutive duplicates so repeated sends don't clutter history.
+		if (this.history[this.history.length - 1] !== text) {
+			this.history.push(text);
+		}
+		this.historyIndex = this.history.length;
+		this.draft = "";
 	}
 
 	private handleKeydown(e: KeyboardEvent) {
 		if (this.fileSearch.handleKeydown(e)) return;
 		if (this.commandDropdown.handleKeydown(e)) return;
+
+		if (e.key === "ArrowUp" && this.navigateHistory(-1)) {
+			e.preventDefault();
+			return;
+		}
+		if (e.key === "ArrowDown" && this.navigateHistory(1)) {
+			e.preventDefault();
+			return;
+		}
 
 		if (e.key === "Enter" && !e.shiftKey) {
 			e.preventDefault();
@@ -166,9 +196,52 @@ export class InputArea {
 		}
 	}
 
+	/**
+	 * Steps through submitted-message history when the caret is on the edge line
+	 * (top line for Up, bottom line for Down), so multi-line editing still works.
+	 * Returns true when it consumed the key.
+	 */
+	private navigateHistory(direction: -1 | 1): boolean {
+		if (this.history.length === 0) return false;
+
+		const value = this.inputEl.value;
+		const cursorPos = this.inputEl.selectionStart;
+		if (direction === -1) {
+			// Up: only when nothing precedes the caret line.
+			if (value.substring(0, cursorPos).includes("\n")) return false;
+		} else {
+			// Down: only when nothing follows the caret line.
+			if (value.substring(cursorPos).includes("\n")) return false;
+			// Already composing a fresh message — let the caret move normally.
+			if (this.historyIndex >= this.history.length) return false;
+		}
+
+		if (direction === -1 && this.historyIndex === this.history.length) {
+			this.draft = value;
+		}
+
+		const nextIndex = this.historyIndex + direction;
+		if (nextIndex < 0 || nextIndex > this.history.length) return false;
+
+		this.historyIndex = nextIndex;
+		const nextValue = nextIndex === this.history.length ? this.draft : this.history[nextIndex];
+		this.setValue(nextValue);
+		return true;
+	}
+
+	private setValue(text: string) {
+		this.inputEl.value = text;
+		this.inputEl.setSelectionRange(text.length, text.length);
+		this.inputEl.style.height = "auto";
+		this.inputEl.style.height = Math.min(this.inputEl.scrollHeight, 150) + "px";
+	}
+
 	private handleInput() {
 		this.inputEl.style.height = "auto";
 		this.inputEl.style.height = Math.min(this.inputEl.scrollHeight, 150) + "px";
+
+		// Editing detaches from history; next Up starts from the newest entry.
+		this.historyIndex = this.history.length;
 
 		if (!this.fileSearch.handleInput()) {
 			this.updateCommandAutocomplete();
