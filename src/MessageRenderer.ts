@@ -1,4 +1,4 @@
-import { App, Component, MarkdownRenderer } from "obsidian";
+import { App, Component, MarkdownRenderer, setIcon } from "obsidian";
 import type { Message } from "./claude/types";
 import { hasDiffView, renderDiffView } from "./DiffView";
 
@@ -13,14 +13,11 @@ export class MessageRenderer {
 		private owner: Component,
 	) {}
 
-	/**
-	 * Re-render the full message list. `trailingEl` (the thinking indicator)
-	 * is re-appended at the end so it survives re-renders.
-	 */
-	async render(messages: Message[], trailingEl: HTMLElement | null): Promise<void> {
+	/** Re-render the full message list. */
+	async render(messages: Message[]): Promise<void> {
 		this.container.empty();
 
-		if (messages.length === 0 && !trailingEl) {
+		if (messages.length === 0) {
 			this.renderEmptyState();
 			return;
 		}
@@ -35,7 +32,6 @@ export class MessageRenderer {
 			}
 		}
 
-		if (trailingEl) this.container.appendChild(trailingEl);
 		this.container.scrollTop = this.container.scrollHeight;
 	}
 
@@ -66,7 +62,8 @@ export class MessageRenderer {
 		const el = this.container.createDiv({ cls: "clawbar-narrative" });
 
 		const header = el.createDiv({ cls: "clawbar-narrative-header" });
-		const toggle = header.createSpan({ cls: "clawbar-narrative-toggle", text: "▶" });
+		const toggle = header.createSpan({ cls: "clawbar-narrative-toggle" });
+		setIcon(toggle, "chevron-right");
 		header.createSpan({ cls: "clawbar-narrative-label", text: "Thinking" });
 
 		const content = el.createDiv({ cls: "clawbar-narrative-content clawbar-collapsed" });
@@ -83,7 +80,8 @@ export class MessageRenderer {
 		const toolEl = this.container.createDiv({ cls: "clawbar-message clawbar-message-tool" });
 
 		const header = toolEl.createDiv({ cls: "clawbar-tool-header" });
-		const toggle = header.createSpan({ cls: "clawbar-tool-toggle", text: "▶" });
+		const toggle = header.createSpan({ cls: "clawbar-tool-toggle" });
+		setIcon(toggle, "chevron-right");
 		header.createSpan({ cls: "clawbar-tool-name", text: msg.toolName || "Tool" });
 
 		const summary = this.getToolSummary(msg.toolName, msg.blocks[0]?.input);
@@ -97,10 +95,14 @@ export class MessageRenderer {
 		}
 
 		const isComplete = msg.toolResult !== undefined;
-		header.createSpan({
+		const status = header.createSpan({
 			cls: `clawbar-tool-status ${isComplete ? "clawbar-tool-complete" : "clawbar-tool-pending"}`,
-			text: isComplete ? "✓" : "⋯",
 		});
+		if (isComplete) {
+			setIcon(status, "check");
+		} else {
+			status.createSpan({ cls: "clawbar-spinner" });
+		}
 
 		const content = toolEl.createDiv({ cls: "clawbar-tool-content clawbar-collapsed" });
 
@@ -175,10 +177,11 @@ export class MessageRenderer {
 			const wasCollapsed = content.hasClass("clawbar-collapsed");
 			if (wasCollapsed) {
 				content.removeClass("clawbar-collapsed");
+				toggle.addClass("clawbar-expanded");
 			} else {
 				content.addClass("clawbar-collapsed");
+				toggle.removeClass("clawbar-expanded");
 			}
-			toggle.setText(wasCollapsed ? "▼" : "▶");
 		});
 	}
 }

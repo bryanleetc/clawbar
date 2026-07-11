@@ -64,32 +64,35 @@ describe("ConversationTab thinking indicator", () => {
 		({ tab } = createTab());
 	});
 
-	it("showThinking creates thinking element in the tab's messages container", () => {
+	it("showThinking sets thinking state without touching the messages container", () => {
 		(tab as any).showThinking();
 
-		const thinkingEl = messagesEl(tab).querySelector(".clawbar-thinking");
-		expect(thinkingEl).not.toBeNull();
-		expect((tab as any).thinkingEl).toBe(thinkingEl);
 		expect(tab.isThinking()).toBe(true);
+		expect(messagesEl(tab).children.length).toBe(0);
 	});
 
-	it("hideThinking removes thinking element and resets state", () => {
+	it("hideThinking resets state", () => {
 		(tab as any).showThinking();
 		(tab as any).hideThinking();
 
-		expect(messagesEl(tab).querySelector(".clawbar-thinking")).toBeNull();
-		expect((tab as any).thinkingEl).toBeNull();
 		expect(tab.isThinking()).toBe(false);
 	});
 
-	it("hideThinking is idempotent when no thinking element exists", () => {
+	it("hideThinking is idempotent when not thinking", () => {
 		expect(() => (tab as any).hideThinking()).not.toThrow();
 		expect(tab.isThinking()).toBe(false);
 	});
 
-	it("renderMessages preserves thinking element after re-render", async () => {
+	it("hideThinking does not notify the host when already idle", () => {
+		const host = createHost();
+		const { tab } = createTab(host);
+
+		(tab as any).hideThinking();
+		expect(host.onTabStateChanged).not.toHaveBeenCalled();
+	});
+
+	it("thinking state survives message re-renders", async () => {
 		(tab as any).showThinking();
-		const thinkingRef = (tab as any).thinkingEl;
 
 		tab.messages.push({
 			role: "user",
@@ -97,55 +100,9 @@ describe("ConversationTab thinking indicator", () => {
 		});
 		await (tab as any).renderMessages();
 
-		const container = messagesEl(tab);
-		expect(container.contains(thinkingRef)).toBe(true);
-		expect(container.lastElementChild).toBe(thinkingRef);
-		expect((tab as any).thinkingEl).toBe(thinkingRef);
-	});
-
-	it("renderMessages does not append thinking when thinkingEl is null", async () => {
-		tab.messages.push({
-			role: "user",
-			blocks: [{ type: "text", text: "hello" }],
-		});
-		await (tab as any).renderMessages();
-
-		expect(messagesEl(tab).querySelector(".clawbar-thinking")).toBeNull();
-	});
-
-	it("addMessage triggers renderMessages and preserves thinking", async () => {
-		(tab as any).showThinking();
-		tab.addMessage("user", [{ type: "text", text: "test" }]);
-
-		// renderMessages is async, wait a tick
-		await new Promise((r) => setTimeout(r, 0));
-
-		const container = messagesEl(tab);
-		expect(container.querySelector(".clawbar-thinking")).not.toBeNull();
-		expect(container.lastElementChild).toBe((tab as any).thinkingEl);
-		// 1 message div + 1 thinking div
-		expect(container.children.length).toBe(2);
-	});
-
-	it("thinking element survives multiple consecutive renderMessages calls", async () => {
-		(tab as any).showThinking();
-		const thinkingRef = (tab as any).thinkingEl;
-
-		await (tab as any).renderMessages();
-		await (tab as any).renderMessages();
-		await (tab as any).renderMessages();
-
-		const container = messagesEl(tab);
-		expect(container.contains(thinkingRef)).toBe(true);
-		expect(container.lastElementChild).toBe(thinkingRef);
-		expect(container.querySelectorAll(".clawbar-thinking").length).toBe(1);
-	});
-
-	it("showThinking called twice does not duplicate thinking element", () => {
-		(tab as any).showThinking();
-		(tab as any).showThinking();
-
-		expect(messagesEl(tab).querySelectorAll(".clawbar-thinking").length).toBe(1);
+		expect(tab.isThinking()).toBe(true);
+		// only the message itself is rendered
+		expect(messagesEl(tab).children.length).toBe(1);
 	});
 
 	it("thinking state changes notify the host", () => {

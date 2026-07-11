@@ -16,6 +16,7 @@ export class InputArea {
 	private submitButton: HTMLButtonElement;
 	private stopButton: HTMLButtonElement;
 	private contextBarEl: HTMLElement;
+	private workingEl: HTMLElement;
 	private modelSelectEl: HTMLSelectElement;
 	private commandDropdown: AutocompleteDropdown<SlashCommandDef>;
 	private allCommands: SlashCommandDef[] = [];
@@ -34,12 +35,23 @@ export class InputArea {
 
 		const inputWrapper = container.createDiv({ cls: "clawbar-input-area" });
 
-		this.inputEl = inputWrapper.createEl("textarea", {
+		// Working status shown above the composer while the agent is busy
+		this.workingEl = inputWrapper.createDiv({ cls: "clawbar-working" });
+		this.workingEl.createSpan({ cls: "clawbar-spinner" });
+		this.workingEl.createSpan({ cls: "clawbar-working-text", text: "Working…" });
+		this.workingEl.style.display = "none";
+
+		// Single rounded composer: context chip + textarea + controls row
+		const composer = inputWrapper.createDiv({ cls: "clawbar-composer" });
+
+		this.contextBarEl = composer.createDiv({ cls: "clawbar-context-bar" });
+
+		this.inputEl = composer.createEl("textarea", {
 			cls: "clawbar-input",
 			attr: { placeholder: "Message Claude..." },
 		});
 
-		const buttonsRow = inputWrapper.createDiv({ cls: "clawbar-input-buttons" });
+		const buttonsRow = composer.createDiv({ cls: "clawbar-input-buttons" });
 
 		this.modelSelectEl = buttonsRow.createEl("select", {
 			cls: "clawbar-model-select",
@@ -60,8 +72,9 @@ export class InputArea {
 
 		this.stopButton = buttonsRow.createEl("button", {
 			cls: "clawbar-stop",
-			text: "Stop",
+			attr: { "aria-label": "Stop" },
 		});
+		setIcon(this.stopButton, "square");
 		this.stopButton.style.display = "none";
 
 		this.submitButton = buttonsRow.createEl("button", {
@@ -81,8 +94,6 @@ export class InputArea {
 		});
 
 		this.fileSearch = new FileSearchProvider(app, inputWrapper, this.inputEl);
-
-		this.contextBarEl = container.createDiv({ cls: "clawbar-context-bar" });
 
 		this.inputEl.addEventListener("keydown", (e) => this.handleKeydown(e));
 		this.inputEl.addEventListener("input", () => this.handleInput());
@@ -140,8 +151,9 @@ export class InputArea {
 	}
 
 	setThinking(thinking: boolean) {
-		this.submitButton.style.display = thinking ? "none" : "block";
-		this.stopButton.style.display = thinking ? "block" : "none";
+		this.submitButton.style.display = thinking ? "none" : "flex";
+		this.stopButton.style.display = thinking ? "flex" : "none";
+		this.workingEl.style.display = thinking ? "flex" : "none";
 	}
 
 	updateContextBar(file: TFile | null) {

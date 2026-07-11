@@ -49,7 +49,6 @@ export class ConversationTab {
 	private prompts: PromptManager;
 	private messagesEl: HTMLElement;
 	private promptsEl: HTMLElement;
-	private thinkingEl: HTMLElement | null = null;
 	private thinking = false;
 	private unseen = false;
 	private active = false;
@@ -280,25 +279,18 @@ export class ConversationTab {
 	}
 
 	private renderMessages(): Promise<void> {
-		return this.renderer.render(this.messages, this.thinkingEl);
+		return this.renderer.render(this.messages);
 	}
 
+	// Thinking is shown as a working status in the input area (via the host),
+	// not as an element in the message list.
 	private showThinking() {
-		this.hideThinking();
-		this.thinkingEl = this.messagesEl.createDiv({ cls: "clawbar-thinking" });
-		this.thinkingEl.createSpan({ text: "Thinking", cls: "clawbar-thinking-text" });
-		this.thinkingEl.createSpan({ cls: "clawbar-thinking-dots" });
 		this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
-
 		this.thinking = true;
 		this.host.onTabStateChanged(this);
 	}
 
 	private hideThinking() {
-		if (this.thinkingEl) {
-			this.thinkingEl.remove();
-			this.thinkingEl = null;
-		}
 		if (this.thinking) {
 			this.thinking = false;
 			this.host.onTabStateChanged(this);
