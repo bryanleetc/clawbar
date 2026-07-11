@@ -115,6 +115,7 @@ export class InputArea {
 			return;
 		}
 
+		let matched = false;
 		for (const model of models) {
 			const option = this.modelSelectEl.createEl("option", {
 				text: model.displayName,
@@ -122,11 +123,12 @@ export class InputArea {
 			});
 			if (currentModel && (model.value === currentModel || currentModel.includes(model.value))) {
 				option.selected = true;
+				matched = true;
 			}
 		}
 
 		// Current model not in the list (e.g. full model ID from init) — show it as-is
-		if (currentModel && !this.modelSelectEl.value) {
+		if (currentModel && !matched) {
 			const option = this.modelSelectEl.createEl("option", {
 				text: currentModel,
 				attr: { value: currentModel },

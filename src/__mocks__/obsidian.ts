@@ -53,3 +53,5 @@ export class TFile {
 }
 
 export class App {}
+
+export function setIcon(_el: HTMLElement, _icon: string) {}

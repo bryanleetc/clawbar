@@ -60,6 +60,9 @@ export class AgentManager {
 	async start(cwd: string, claudePath?: string, resumeSessionId?: string, configDir?: string, model?: string): Promise<void> {
 		this.abortController = new AbortController();
 		this.running = true;
+		// The init message (which carries the resolved model) only arrives once the
+		// first user message is sent, so seed from the model we're starting with
+		this.currentModel = model ?? null;
 
 		try {
 			this.queryInstance = query({

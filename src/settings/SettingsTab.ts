@@ -12,6 +12,7 @@ export interface ClawbarSettings {
 	claudePath: string;
 	sessionIndex: SessionMeta[];
 	currentSessionId: string | null;
+	openSessionIds: string[];
 	disabledMcpServers: string[];
 	maxSavedChats: number;
 	accounts: ClaudeAccount[];
@@ -23,6 +24,7 @@ export const DEFAULT_SETTINGS: ClawbarSettings = {
 	claudePath: "",
 	sessionIndex: [],
 	currentSessionId: null,
+	openSessionIds: [],
 	disabledMcpServers: [],
 	maxSavedChats: 50,
 	accounts: [],

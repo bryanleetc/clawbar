@@ -1,36 +1,23 @@
-import { ItemView, Notice, WorkspaceLeaf, TFile } from "obsidian";
-import { homedir } from "os";
-import { AgentManager } from "./claude/AgentManager";
-import {
-	assistantBlocks,
-	isReplay,
-	toolResultBlocks,
-	toolResultText,
-} from "./claude/types";
-import type { SDKMessage, ContentBlock, Message, SessionMeta } from "./claude/types";
+import { ItemView, Notice, WorkspaceLeaf, TFile, setIcon } from "obsidian";
+import { ConversationTab, type TabHost } from "./ConversationTab";
+import type { SessionMeta, SlashCommand } from "./claude/types";
 import type ClawbarPlugin from "./main";
 import { BUILTIN_COMMANDS, MAX_INLINE_FILE_CHARS } from "./constants";
 import { UsageModal } from "./UsageModal";
 import { McpSettingsModal } from "./McpSettingsModal";
 import { InputArea } from "./InputArea";
-import { MessageRenderer } from "./MessageRenderer";
-import { PromptManager } from "./PromptManager";
 
 export const VIEW_TYPE_CHAT = "clawbar-chat-view";
 
-// Delay before re-applying persisted disabled MCPs, to let the agent initialize
-const MCP_REAPPLY_DELAY_MS = 2000;
+const TAB_TITLE_MAX_CHARS = 24;
 
-export class ChatView extends ItemView {
-	private messages: Message[] = [];
-	private messagesContainer: HTMLElement;
-	private thinkingEl: HTMLElement | null = null;
-	private renderer: MessageRenderer;
-	private prompts: PromptManager;
-	private agent: AgentManager | null = null;
+export class ChatView extends ItemView implements TabHost {
+	private tabs: ConversationTab[] = [];
+	private activeTab: ConversationTab | null = null;
+	private tabStripEl: HTMLElement;
+	private messagesRegion: HTMLElement;
+	private promptsRegion: HTMLElement;
 	private activeFile: TFile | null = null;
-	private currentSessionId: string | null = null;
-	private sessionBarEl: HTMLElement;
 	private inputComponent: InputArea;
 	plugin: ClawbarPlugin;
 
@@ -56,16 +43,16 @@ export class ChatView extends ItemView {
 		container.empty();
 		container.addClass("clawbar-container");
 
-		this.sessionBarEl = container.createDiv({ cls: "clawbar-session-bar" });
-		this.messagesContainer = container.createDiv({ cls: "clawbar-messages" });
-		this.renderer = new MessageRenderer(this.app, this.messagesContainer, this);
-		this.prompts = new PromptManager(container.createDiv({ cls: "clawbar-prompts" }));
+		this.tabStripEl = container.createDiv({ cls: "clawbar-tab-strip" });
+		this.messagesRegion = container.createDiv({ cls: "clawbar-messages-region" });
+		this.promptsRegion = container.createDiv({ cls: "clawbar-prompts-region" });
 
 		this.inputComponent = new InputArea(container, this.app, {
 			onSubmit: (text) => this.handleSubmit(text),
 			onStop: () => this.handleStop(),
 			onSettings: () => {
-				if (this.agent) new McpSettingsModal(this.app, this.agent, this.plugin).open();
+				const agent = this.activeTab?.getAgent();
+				if (agent) new McpSettingsModal(this.app, agent, this.plugin).open();
 			},
 			onModelChange: (model) => this.handleModelChange(model),
 		});
@@ -79,250 +66,271 @@ export class ChatView extends ItemView {
 		this.activeFile = this.app.workspace.getActiveFile();
 		this.inputComponent.updateContextBar(this.activeFile);
 
-		// Auto-resume the last session if it has saved messages
-		const lastSessionId = this.plugin.settings.currentSessionId;
-		const saved = lastSessionId
-			? this.plugin.conversationStore?.loadSession(lastSessionId)
-			: null;
-		if (lastSessionId && saved && saved.length > 0) {
-			this.messages = saved;
-			this.currentSessionId = lastSessionId;
-		}
-
-		this.renderMessages();
-		this.renderSessionBar();
-		this.startAgent(this.currentSessionId ?? undefined);
+		this.restoreTabs();
 	}
 
 	async onClose() {
-		await this.saveCurrentConversation();
-		this.agent?.stop();
+		await this.persistOpenTabs();
+		for (const tab of this.tabs) {
+			await tab.dispose();
+		}
+		this.tabs = [];
+		this.activeTab = null;
 		this.inputComponent.destroy();
 	}
 
 	async restartForAccountChange() {
-		await this.switchToSession(null);
+		for (const tab of this.tabs) {
+			await tab.dispose();
+		}
+		this.tabs = [];
+		this.activeTab = null;
+		this.newTab();
 	}
 
-	// --- Agent lifecycle ---
+	// --- TabHost ---
 
-	private startAgent(resumeSessionId?: string) {
-		const vaultPath = (this.app.vault.adapter as { basePath?: string }).basePath;
-		if (!vaultPath) {
-			new Notice("Could not get vault base path");
+	onTabStateChanged(tab: ConversationTab) {
+		this.renderTabStrip();
+		if (tab === this.activeTab) {
+			this.inputComponent.setThinking(tab.isThinking());
+		}
+	}
+
+	onSessionId(tab: ConversationTab) {
+		this.persistOpenTabs();
+		this.renderTabStrip();
+	}
+
+	onModels(tab: ConversationTab) {
+		if (tab === this.activeTab) {
+			this.inputComponent.setModels(tab.models, tab.currentModel);
+		}
+	}
+
+	onSkills(skills: SlashCommand[]) {
+		this.inputComponent.setCommands([
+			...BUILTIN_COMMANDS,
+			...skills.map((s) => ({
+				name: s.name,
+				description: s.description,
+				argumentHint: s.argumentHint,
+			})),
+		]);
+	}
+
+	// --- Tab management ---
+
+	/** Recreate tabs persisted from the last session; falls back to one fresh tab. */
+	private restoreTabs() {
+		const store = this.plugin.conversationStore;
+		const sessionIds = this.plugin.settings.openSessionIds.length > 0
+			? this.plugin.settings.openSessionIds
+			// Migration from the pre-tabs single-session layout
+			: this.plugin.settings.currentSessionId
+				? [this.plugin.settings.currentSessionId]
+				: [];
+
+		for (const sessionId of sessionIds) {
+			const messages = store?.loadSession(sessionId);
+			if (!messages || messages.length === 0) continue;
+			const tab = this.createTab();
+			tab.loadMessages(sessionId, messages);
+			tab.startAgent(sessionId);
+			this.tabs.push(tab);
+		}
+
+		if (this.tabs.length === 0) {
+			this.newTab();
 			return;
 		}
 
-		this.agent = new AgentManager({
-			onMessage: (msg) => this.handleSDKMessage(msg),
-			onError: (err) => this.handleAgentError(err, resumeSessionId),
-			onPermission: (toolName, toolInput) => this.prompts.request(toolName, toolInput),
-			onSkills: (skills) =>
-				this.inputComponent.setCommands([
-					...BUILTIN_COMMANDS,
-					...skills.map((s) => ({
-						name: s.name,
-						description: s.description,
-						argumentHint: s.argumentHint,
-					})),
-				]),
-			onSessionId: (id) => {
-				this.currentSessionId = id;
-				this.renderSessionBar();
-			},
-			onModels: (models, currentModel) => this.inputComponent.setModels(models, currentModel),
-		});
-
-		// Ensure buttons are in initial state
-		this.hideThinking();
-		this.reapplyDisabledMcps();
-
-		const activeAccount = this.plugin.settings.accounts?.find(
-			(a) => a.id === this.plugin.settings.activeAccountId
+		const current = this.tabs.find(
+			(t) => t.sessionId === this.plugin.settings.currentSessionId
 		);
-		this.agent.start(
-			vaultPath,
-			this.plugin.settings.claudePath,
-			resumeSessionId,
-			activeAccount?.configDir?.replace(/^~/, homedir()),
-			this.plugin.settings.selectedModel ?? undefined,
+		this.activateTab(current ?? this.tabs[0]);
+	}
+
+	private createTab(): ConversationTab {
+		return new ConversationTab(
+			this.app,
+			this.plugin,
+			this.messagesRegion,
+			this.promptsRegion,
+			this,
+			this,
 		);
 	}
 
-	private handleAgentError(err: string, resumeSessionId?: string) {
-		this.hideThinking();
-		if (resumeSessionId) {
-			// Session resume failed (e.g. stale session after vault reopen) — retry fresh
-			console.log(`[Clawbar] Session resume failed, starting fresh. Error: ${err}`);
-			this.startAgent();
+	private newTab(): ConversationTab {
+		const tab = this.createTab();
+		tab.startAgent();
+		this.tabs.push(tab);
+		this.activateTab(tab);
+		return tab;
+	}
+
+	/** Open a saved session as a tab, or focus it if it's already open. */
+	private openSession(sessionId: string) {
+		const existing = this.tabs.find((t) => t.sessionId === sessionId);
+		if (existing) {
+			this.activateTab(existing);
+			return;
+		}
+
+		const messages = this.plugin.conversationStore?.loadSession(sessionId);
+		if (!messages) {
+			new Notice("Could not load conversation.");
+			return;
+		}
+
+		const tab = this.createTab();
+		tab.loadMessages(sessionId, messages);
+		tab.startAgent(sessionId);
+		this.tabs.push(tab);
+		this.activateTab(tab);
+	}
+
+	private activateTab(tab: ConversationTab) {
+		for (const t of this.tabs) {
+			if (t === tab) t.show();
+			else t.hide();
+		}
+		this.activeTab = tab;
+		this.inputComponent.setThinking(tab.isThinking());
+		this.inputComponent.setModels(tab.models, tab.currentModel);
+		this.persistOpenTabs();
+		this.renderTabStrip();
+	}
+
+	private async closeTab(tab: ConversationTab) {
+		const index = this.tabs.indexOf(tab);
+		if (index === -1) return;
+
+		this.tabs.splice(index, 1);
+		await tab.dispose();
+
+		if (this.tabs.length === 0) {
+			this.newTab();
+		} else if (tab === this.activeTab) {
+			this.activateTab(this.tabs[Math.min(index, this.tabs.length - 1)]);
 		} else {
-			new Notice(`Claude error: ${err}`);
-			console.log(`Claude error: ${err}`);
+			this.persistOpenTabs();
+			this.renderTabStrip();
 		}
 	}
 
-	private reapplyDisabledMcps() {
-		const disabled = this.plugin.settings.disabledMcpServers;
-		if (disabled.length === 0) return;
-		setTimeout(async () => {
-			for (const name of disabled) {
-				try {
-					await this.agent?.toggleMcpServer(name, false);
-					console.log(`[Clawbar] MCP server disabled: ${name}`);
-				} catch (err) {
-					console.error(`[Clawbar] Failed to disable MCP server "${name}":`, err);
-				}
-			}
-		}, MCP_REAPPLY_DELAY_MS);
+	/** Replace the active tab with a fresh conversation (used by /clear). */
+	private async resetActiveTab() {
+		const old = this.activeTab;
+		const index = old ? this.tabs.indexOf(old) : -1;
+
+		const tab = this.createTab();
+		tab.startAgent();
+		if (index >= 0) {
+			this.tabs[index] = tab;
+		} else {
+			this.tabs.push(tab);
+		}
+		this.activateTab(tab);
+		await old?.dispose();
 	}
 
-	private async handleModelChange(model: string) {
-		try {
-			await this.agent?.setModel(model);
-			this.plugin.settings.selectedModel = model;
-			await this.plugin.saveSettings();
-			new Notice(`Model switched to ${model}`);
-		} catch (err) {
-			new Notice(`Could not switch model: ${err instanceof Error ? err.message : err}`);
-		}
-	}
-
-	// --- SDK message handling ---
-
-	private handleSDKMessage(msg: SDKMessage) {
-		// Resume replays are skipped — the UI already has these messages loaded
-		if (isReplay(msg)) return;
-
-		switch (msg.type) {
-			case "result":
-				this.hideThinking();
-				this.saveCurrentConversation();
-				return;
-			case "assistant":
-				this.handleAssistantMessage(assistantBlocks(msg) ?? []);
-				return;
-			case "user":
-				this.applyToolResults(toolResultBlocks(msg));
-				return;
-		}
-	}
-
-	private handleAssistantMessage(blocks: ContentBlock[]) {
-		// AskUserQuestion is excluded — it's handled interactively via the permission prompt
-		const textBlocks = blocks.filter((b) => b.type === "text");
-		const toolBlocks = blocks.filter(
-			(b) => b.type === "tool_use" && b.name !== "AskUserQuestion"
-		);
-		if (textBlocks.length === 0 && toolBlocks.length === 0) return;
-
-		if (textBlocks.length > 0) {
-			// Text alongside tool calls is intermediate narration ("Thinking")
-			this.messages.push({
-				role: "assistant",
-				blocks: textBlocks,
-				isThinking: toolBlocks.length > 0,
-			});
-		}
-		for (const block of toolBlocks) {
-			this.messages.push({
-				role: "tool",
-				blocks: [block],
-				toolName: block.name,
-				toolId: block.id,
-			});
-		}
-		this.renderMessages();
-	}
-
-	private applyToolResults(results: ContentBlock[]) {
-		if (results.length === 0) return;
-		for (const result of results) {
-			const toolMsg = this.messages.find(
-				(m) => m.role === "tool" && m.toolId === result.tool_use_id
-			);
-			if (toolMsg) {
-				toolMsg.toolResult = toolResultText(result.content);
-			}
-		}
-		this.renderMessages();
-	}
-
-	// --- Session management ---
-
-	/** Save the current conversation, then reset UI + agent onto `sessionId` (null = fresh). */
-	private async switchToSession(sessionId: string | null) {
-		await this.saveCurrentConversation();
-
-		let messages: Message[] | null = null;
-		if (sessionId) {
-			messages = this.plugin.conversationStore?.loadSession(sessionId) ?? null;
-			if (!messages) {
-				new Notice("Could not load conversation. Starting fresh.");
-				sessionId = null;
-			}
-		}
-
-		this.messages = messages ?? [];
-		this.currentSessionId = sessionId;
-		this.prompts.reset();
-		this.agent?.detach();
-		this.agent?.stop();
-		this.renderMessages();
-		this.renderSessionBar();
-		this.startAgent(sessionId ?? undefined);
-	}
-
-	private async saveCurrentConversation() {
-		if (!this.currentSessionId || this.messages.length === 0) return;
-		if (!this.plugin.conversationStore) return;
-
-		await this.plugin.conversationStore.saveSession(this.currentSessionId, this.messages);
-		this.plugin.settings.currentSessionId = this.currentSessionId;
+	private async persistOpenTabs() {
+		this.plugin.settings.openSessionIds = this.tabs
+			.map((t) => t.sessionId)
+			.filter((id): id is string => id !== null);
+		this.plugin.settings.currentSessionId = this.activeTab?.sessionId ?? null;
 		await this.plugin.saveSettings();
 	}
 
-	private renderSessionBar() {
-		this.sessionBarEl.empty();
+	// --- Tab strip rendering ---
 
-		const store = this.plugin.conversationStore;
-		if (!store) return;
+	private renderTabStrip() {
+		this.tabStripEl.empty();
 
-		const sessions = store.getIndex();
+		const sessions = this.plugin.conversationStore?.getIndex() ?? [];
 
-		const newBtn = this.sessionBarEl.createEl("button", {
-			cls: "clawbar-session-new",
-			text: "+ New",
+		for (const tab of this.tabs) {
+			const tabEl = this.tabStripEl.createDiv({
+				cls: `clawbar-tab${tab === this.activeTab ? " clawbar-tab-active" : ""}`,
+			});
+
+			if (tab.isThinking()) {
+				tabEl.createSpan({ cls: "clawbar-tab-thinking" });
+			} else if (tab.hasUnseen()) {
+				tabEl.createSpan({ cls: "clawbar-tab-unseen" });
+			}
+
+			const title = this.getTabTitle(tab, sessions);
+			tabEl.createSpan({ cls: "clawbar-tab-title", text: title });
+			tabEl.setAttribute("title", title);
+
+			const closeBtn = tabEl.createSpan({ cls: "clawbar-tab-close", text: "×" });
+			closeBtn.setAttribute("aria-label", "Close tab");
+			closeBtn.addEventListener("click", (e) => {
+				e.stopPropagation();
+				this.closeTab(tab);
+			});
+
+			tabEl.addEventListener("click", () => {
+				if (tab !== this.activeTab) this.activateTab(tab);
+			});
+			tabEl.addEventListener("auxclick", (e) => {
+				if (e.button === 1) this.closeTab(tab);
+			});
+		}
+
+		const newBtn = this.tabStripEl.createEl("button", {
+			cls: "clawbar-tab-new",
+			attr: { "aria-label": "New conversation" },
 		});
-		newBtn.addEventListener("click", () => this.switchToSession(null));
+		setIcon(newBtn, "plus");
+		newBtn.addEventListener("click", () => this.newTab());
 
-		if (sessions.length === 0) return;
+		this.renderHistorySelect(sessions);
+	}
 
-		const select = this.sessionBarEl.createEl("select", { cls: "clawbar-session-select" });
+	/** Dropdown of saved sessions not currently open; picking one opens it as a tab. */
+	private renderHistorySelect(sessions: SessionMeta[]) {
+		const openIds = new Set(this.tabs.map((t) => t.sessionId));
+		const closed = sessions.filter((s) => !openIds.has(s.sessionId));
+		if (closed.length === 0) return;
 
+		const select = this.tabStripEl.createEl("select", { cls: "clawbar-tab-history" });
 		select.createEl("option", {
-			text: this.getSessionTitle(this.currentSessionId, sessions),
-			attr: { value: this.currentSessionId ?? "__current__" },
+			text: "History…",
+			attr: { value: "", selected: "selected", disabled: "disabled" },
 		});
-		for (const session of sessions) {
-			if (session.sessionId === this.currentSessionId) continue;
+		for (const session of closed) {
 			const date = new Date(session.updatedAt).toLocaleDateString();
 			select.createEl("option", {
 				text: `${session.title} — ${date}`,
 				attr: { value: session.sessionId },
 			});
 		}
-
 		select.addEventListener("change", (e) => {
 			const value = (e.target as HTMLSelectElement).value;
-			if (value && value !== "__current__" && value !== this.currentSessionId) {
-				this.switchToSession(value);
-			}
+			if (value) this.openSession(value);
 		});
 	}
 
-	private getSessionTitle(sessionId: string | null, sessions: SessionMeta[]): string {
-		const meta = sessionId ? sessions.find((s) => s.sessionId === sessionId) : undefined;
-		return meta?.title ?? "Current conversation";
+	private getTabTitle(tab: ConversationTab, sessions: SessionMeta[]): string {
+		const meta = tab.sessionId
+			? sessions.find((s) => s.sessionId === tab.sessionId)
+			: undefined;
+		let title = meta?.title;
+
+		if (!title) {
+			// Not saved yet — derive from the first user message, if any
+			const firstUser = tab.messages.find((m) => m.role === "user");
+			const text = firstUser?.blocks.find((b) => b.type === "text")?.text?.trim();
+			title = text || "New chat";
+		}
+
+		return title.length > TAB_TITLE_MAX_CHARS
+			? title.substring(0, TAB_TITLE_MAX_CHARS - 1) + "…"
+			: title;
 	}
 
 	// --- Input handling ---
@@ -330,7 +338,7 @@ export class ChatView extends ItemView {
 	private async handleSubmit(text: string) {
 		if (text === "/clear") {
 			this.inputComponent.clear();
-			this.switchToSession(null);
+			this.resetActiveTab();
 			return;
 		}
 		if (text === "/usage") {
@@ -338,11 +346,11 @@ export class ChatView extends ItemView {
 			this.showUsageModal();
 			return;
 		}
+		if (!this.activeTab) return;
 
-		this.addMessage("user", [{ type: "text", text }]);
+		const tab = this.activeTab;
 		this.inputComponent.clear();
-		this.showThinking();
-		this.agent?.sendMessage(await this.buildOutgoingMessage(text));
+		tab.sendUserMessage(text, await this.buildOutgoingMessage(text));
 	}
 
 	/** Prepend @file references and active-file context to the outgoing message. */
@@ -364,7 +372,7 @@ export class ChatView extends ItemView {
 	private showUsageModal() {
 		const modal = new UsageModal(this.app);
 		modal.open();
-		this.agent?.requestUsage((markdown) => {
+		this.activeTab?.requestUsage((markdown) => {
 			if (markdown.trim()) {
 				modal.showContent(markdown);
 			} else {
@@ -373,38 +381,19 @@ export class ChatView extends ItemView {
 		});
 	}
 
-	private handleStop() {
-		this.agent?.stop();
-		this.hideThinking();
-		new Notice("Request cancelled");
-	}
-
-	// --- Rendering ---
-
-	addMessage(role: "user" | "assistant", blocks: ContentBlock[], isThinking = false) {
-		this.messages.push({ role, blocks, isThinking });
-		this.renderMessages();
-	}
-
-	private renderMessages(): Promise<void> {
-		return this.renderer.render(this.messages, this.thinkingEl);
-	}
-
-	private showThinking() {
-		this.hideThinking();
-		this.thinkingEl = this.messagesContainer.createDiv({ cls: "clawbar-thinking" });
-		this.thinkingEl.createSpan({ text: "Thinking", cls: "clawbar-thinking-text" });
-		this.thinkingEl.createSpan({ cls: "clawbar-thinking-dots" });
-		this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
-
-		this.inputComponent.setThinking(true);
-	}
-
-	private hideThinking() {
-		if (this.thinkingEl) {
-			this.thinkingEl.remove();
-			this.thinkingEl = null;
+	private async handleModelChange(model: string) {
+		try {
+			await this.activeTab?.setModel(model);
+			this.plugin.settings.selectedModel = model;
+			await this.plugin.saveSettings();
+			new Notice(`Model switched to ${model}`);
+		} catch (err) {
+			new Notice(`Could not switch model: ${err instanceof Error ? err.message : err}`);
 		}
-		this.inputComponent?.setThinking(false);
+	}
+
+	private handleStop() {
+		this.activeTab?.stop();
+		new Notice("Request cancelled");
 	}
 }

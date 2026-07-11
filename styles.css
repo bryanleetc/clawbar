@@ -969,49 +969,134 @@ input.clawbar-question-submit:hover {
 	margin-bottom: 0;
 }
 
-/* Session selector bar */
-.clawbar-session-bar {
+/* Tab strip (one tab per open conversation) */
+.clawbar-tab-strip {
 	display: flex;
 	align-items: center;
-	gap: 8px;
-	padding: 8px 12px;
+	gap: 4px;
+	padding: 6px 8px;
 	border-bottom: 1px solid var(--background-modifier-border);
 	background-color: var(--background-secondary);
 	flex-shrink: 0;
+	overflow-x: auto;
 }
 
-.clawbar-session-new {
-	padding: 4px 10px;
+.clawbar-tab {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	padding: 3px 5px 3px 9px;
+	border: 1px solid transparent;
+	border-radius: 5px;
 	font-size: 0.8rem;
-	font-weight: 500;
-	background-color: var(--interactive-accent);
-	color: var(--text-on-accent);
-	border: none;
-	border-radius: 4px;
+	color: var(--text-muted);
 	cursor: pointer;
-	flex-shrink: 0;
+	min-width: 0;
+	max-width: 180px;
 	white-space: nowrap;
 }
 
-.clawbar-session-new:hover {
-	background-color: var(--interactive-accent-hover);
+.clawbar-tab:hover {
+	background-color: var(--background-modifier-hover);
 }
 
-.clawbar-session-select {
-	flex: 1;
-	min-width: 0;
-	padding: 4px 8px;
-	font-size: 0.8rem;
+.clawbar-tab-active {
 	background-color: var(--background-primary);
+	border-color: var(--background-modifier-border);
 	color: var(--text-normal);
-	border: 1px solid var(--background-modifier-border);
-	border-radius: 4px;
-	cursor: pointer;
+}
+
+.clawbar-tab-title {
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
 
-.clawbar-session-select:focus {
+.clawbar-tab-close {
+	padding: 0 4px;
+	border-radius: 3px;
+	color: var(--text-faint);
+	line-height: 1.2;
+	flex-shrink: 0;
+}
+
+.clawbar-tab-close:hover {
+	color: var(--text-normal);
+	background-color: var(--background-modifier-hover);
+}
+
+/* Activity indicators: pulsing dot while the tab's agent is thinking,
+   solid dot for a finished response not yet seen */
+.clawbar-tab-thinking,
+.clawbar-tab-unseen {
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background-color: var(--interactive-accent);
+	flex-shrink: 0;
+}
+
+.clawbar-tab-thinking {
+	animation: clawbar-tab-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes clawbar-tab-pulse {
+	0%, 100% { opacity: 1; }
+	50% { opacity: 0.3; }
+}
+
+.clawbar-tab-new {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 3px;
+	background: none;
+	border: none;
+	box-shadow: none;
+	border-radius: 4px;
+	color: var(--text-muted);
+	cursor: pointer;
+	flex-shrink: 0;
+}
+
+.clawbar-tab-new:hover {
+	background-color: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.clawbar-tab-new svg {
+	width: 14px;
+	height: 14px;
+}
+
+.clawbar-tab-history {
+	margin-left: auto;
+	max-width: 110px;
+	padding: 2px 6px;
+	font-size: 0.75rem;
+	background-color: transparent;
+	color: var(--text-muted);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	cursor: pointer;
+	flex-shrink: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.clawbar-tab-history:focus {
 	outline: none;
 	border-color: var(--interactive-accent);
+}
+
+/* Per-tab message/prompt containers live inside these regions;
+   inactive tabs' containers are display:none */
+.clawbar-messages-region {
+	flex: 1;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+}
+
+.clawbar-prompts-region {
+	flex-shrink: 0;
 }
